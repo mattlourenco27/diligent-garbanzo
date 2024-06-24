@@ -48,17 +48,22 @@ pub mod ops {
             .fold(T::zero(), |acc, (&l, &r)| acc + l * r)
     }
 
-    pub fn normalize<T: Float>(vec: &mut impl Vector<T>) {
-        *vec *= T::one() / vec.get_norm();
+    pub fn normalize<T: Float>(vec: &mut impl Vector<T>) -> Result<(), String> {
+        let norm = vec.get_norm();
+        if norm == T::zero() {
+            return Err(String::from("Caught division by Zero during normalization"));
+        }
+        *vec *= T::one() / norm;
+        Ok(())
     }
 
-    pub fn unit<T, U>(mut vec: T) -> T
+    pub fn unit<T, U>(mut vec: T) -> Result<T, String>
     where
         T: Vector<U>,
         U: Float,
     {
-        normalize(&mut vec);
-        vec
+        normalize(&mut vec)?;
+        Ok(vec)
     }
 }
 
@@ -453,7 +458,7 @@ mod tests {
     #[test]
     fn vector_normalize() {
         let mut vec = StaticVector([3.0, -4.0]);
-        ops::normalize(&mut vec);
+        ops::normalize(&mut vec).unwrap();
         assert!(within_epsilon(
             &StaticVector([0.6, -0.8]),
             &vec,
@@ -465,13 +470,13 @@ mod tests {
     #[should_panic]
     fn vector_normalize_zero() {
         let mut vec: StaticVector<f64, 3> = StaticVector::ZERO;
-        ops::normalize(&mut vec);
+        ops::normalize(&mut vec).unwrap()
     }
 
     #[test]
     fn vector_unit_vec() {
         let vec = StaticVector([3.0, -4.0]);
-        let unit_vec = ops::unit(vec);
+        let unit_vec = ops::unit(vec).unwrap();
         assert!(within_epsilon(
             &StaticVector([0.6, -0.8]),
             &unit_vec,
