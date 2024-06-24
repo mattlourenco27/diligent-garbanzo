@@ -1,47 +1,27 @@
-use num_traits::{Float, Zero};
-use std::slice::Iter;
-
-pub mod ops {
-    use num_traits::{Float, Zero};
-
-    use super::Vector;
-
-    pub fn dot<T>(_lhs: &impl Vector<T>, _rhs: &impl Vector<T>) -> T
-    where
-        T: Zero + Copy + std::ops::Mul<T, Output = T>,
-    {
-        _lhs.iter()
-            .zip(_rhs.iter())
-            .fold(T::zero(), |acc, (&l, &r)| acc + l * r)
-    }
-
-    pub fn normalize<T: Float>(vec: &mut impl Vector<T>) {
-        *vec *= T::one() / vec.get_norm();
-    }
-
-    pub fn unit<T, U>(vec: T) -> T
-    where
-        T: Vector<U>,
-        U: Float,
-    {
-        let mut tmp = vec.clone();
-        normalize(&mut tmp);
-        tmp
-    }
-}
+use core::slice::Iter;
+use num_traits::{ConstZero, Float, Zero};
 
 pub trait Vector<T>:
     Clone
-    + std::ops::Add<Self, Output = Self>
-    + std::ops::Neg<Output = Self>
-    + std::ops::Mul<T, Output = Self>
-    + std::ops::MulAssign<T>
+    + PartialEq
+    + Zero
+    + core::ops::Neg<Output = Self>
+    + core::ops::Add<T, Output = Self>
+    + core::ops::AddAssign<T>
+    + core::ops::Add<Self, Output = Self>
+    + core::ops::AddAssign<Self>
+    + core::ops::Sub<T, Output = Self>
+    + core::ops::SubAssign<T>
+    + core::ops::Sub<Self, Output = Self>
+    + core::ops::SubAssign<Self>
+    + core::ops::Mul<T, Output = Self>
+    + core::ops::MulAssign<T>
 {
     fn iter(&self) -> Iter<T>;
 
     fn get_norm2(&self) -> T
     where
-        T: Zero + Copy + std::ops::Mul<T, Output = T>,
+        T: Zero + Copy + core::ops::Mul<T, Output = T>,
     {
         ops::dot(self, self)
     }
@@ -52,8 +32,34 @@ pub trait Vector<T>:
     {
         self.get_norm2().sqrt()
     }
+}
 
-    fn zero() -> Self;
+pub mod ops {
+    use num_traits::{Float, Zero};
+
+    use super::Vector;
+
+    pub fn dot<T>(_lhs: &impl Vector<T>, _rhs: &impl Vector<T>) -> T
+    where
+        T: Zero + Copy + core::ops::Mul<T, Output = T>,
+    {
+        _lhs.iter()
+            .zip(_rhs.iter())
+            .fold(T::zero(), |acc, (&l, &r)| acc + l * r)
+    }
+
+    pub fn normalize<T: Float>(vec: &mut impl Vector<T>) {
+        *vec *= T::one() / vec.get_norm();
+    }
+
+    pub fn unit<T, U>(mut vec: T) -> T
+    where
+        T: Vector<U>,
+        U: Float,
+    {
+        normalize(&mut vec);
+        vec
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -68,7 +74,7 @@ impl<T, const SIZE: usize> StaticVector<T, SIZE> {
 impl<T> StaticVector<T, 3> {
     fn cross(_lhs: &Self, _rhs: &Self) -> Self
     where
-        T: Float + std::ops::Add<T, Output = T> + std::ops::Mul<T, Output = T>,
+        T: Float + core::ops::Add<T, Output = T> + core::ops::Mul<T, Output = T>,
     {
         StaticVector([
             _lhs[1] * _rhs[2] - _lhs[2] * _rhs[1],
@@ -80,24 +86,49 @@ impl<T> StaticVector<T, 3> {
 
 impl<T, const SIZE: usize> Vector<T> for StaticVector<T, SIZE>
 where
-    T: Zero
+    T: ConstZero
         + Copy
-        + std::ops::Neg<Output = T>
-        + std::ops::Mul<T, Output = T>
-        + std::ops::MulAssign<T>,
+        + PartialEq
+        + core::ops::Neg<Output = T>
+        + core::ops::Add<T, Output = T>
+        + core::ops::AddAssign<T>
+        + core::ops::Sub<T, Output = T>
+        + core::ops::SubAssign<T>
+        + core::ops::Mul<T, Output = T>
+        + core::ops::MulAssign<T>,
 {
     fn iter(&self) -> Iter<T> {
         self.0.iter()
     }
+}
 
+impl<T, const SIZE: usize> ConstZero for StaticVector<T, SIZE>
+where
+    T: ConstZero + Copy + PartialEq,
+{
+    const ZERO: Self = StaticVector([T::ZERO; SIZE]);
+}
+
+impl<T, const SIZE: usize> Zero for StaticVector<T, SIZE>
+where
+    T: ConstZero + Copy + PartialEq,
+{
     fn zero() -> Self {
-        StaticVector([T::zero(); SIZE])
+        Self::ZERO
+    }
+
+    fn set_zero(&mut self) {
+        *self = Self::ZERO
+    }
+
+    fn is_zero(&self) -> bool {
+        *self == Self::ZERO
     }
 }
 
-impl<T, const SIZE: usize> std::ops::Neg for StaticVector<T, SIZE>
+impl<T, const SIZE: usize> core::ops::Neg for StaticVector<T, SIZE>
 where
-    T: Copy + std::ops::Neg<Output = T>,
+    T: Copy + core::ops::Neg<Output = T>,
 {
     type Output = Self;
     fn neg(mut self) -> Self::Output {
@@ -108,22 +139,22 @@ where
     }
 }
 
-impl<T, const SIZE: usize> std::ops::Index<usize> for StaticVector<T, SIZE> {
+impl<T, const SIZE: usize> core::ops::Index<usize> for StaticVector<T, SIZE> {
     type Output = T;
     fn index(&self, i: usize) -> &Self::Output {
         &self.0[i]
     }
 }
 
-impl<T, const SIZE: usize> std::ops::IndexMut<usize> for StaticVector<T, SIZE> {
+impl<T, const SIZE: usize> core::ops::IndexMut<usize> for StaticVector<T, SIZE> {
     fn index_mut(&mut self, i: usize) -> &mut Self::Output {
         &mut self.0[i]
     }
 }
 
-impl<T, const SIZE: usize> std::ops::AddAssign<T> for StaticVector<T, SIZE>
+impl<T, const SIZE: usize> core::ops::AddAssign<T> for StaticVector<T, SIZE>
 where
-    T: Copy + std::ops::AddAssign<T>,
+    T: Copy + core::ops::AddAssign<T>,
 {
     fn add_assign(&mut self, _rhs: T) {
         for item in self.0.iter_mut() {
@@ -132,9 +163,9 @@ where
     }
 }
 
-impl<T, const SIZE: usize> std::ops::AddAssign<Self> for StaticVector<T, SIZE>
+impl<T, const SIZE: usize> core::ops::AddAssign<Self> for StaticVector<T, SIZE>
 where
-    T: std::ops::AddAssign<T>,
+    T: core::ops::AddAssign<T>,
 {
     fn add_assign(&mut self, _rhs: Self) {
         for (l, r) in self.0.iter_mut().zip(_rhs.0.into_iter()) {
@@ -143,9 +174,9 @@ where
     }
 }
 
-impl<T, const SIZE: usize> std::ops::SubAssign<T> for StaticVector<T, SIZE>
+impl<T, const SIZE: usize> core::ops::SubAssign<T> for StaticVector<T, SIZE>
 where
-    T: Copy + std::ops::SubAssign<T>,
+    T: Copy + core::ops::SubAssign<T>,
 {
     fn sub_assign(&mut self, _rhs: T) {
         for item in self.0.iter_mut() {
@@ -154,9 +185,9 @@ where
     }
 }
 
-impl<T, const SIZE: usize> std::ops::SubAssign<Self> for StaticVector<T, SIZE>
+impl<T, const SIZE: usize> core::ops::SubAssign<Self> for StaticVector<T, SIZE>
 where
-    T: std::ops::SubAssign<T>,
+    T: core::ops::SubAssign<T>,
 {
     fn sub_assign(&mut self, _rhs: Self) {
         for (l, r) in self.0.iter_mut().zip(_rhs.0.into_iter()) {
@@ -165,9 +196,9 @@ where
     }
 }
 
-impl<T, const SIZE: usize> std::ops::MulAssign<T> for StaticVector<T, SIZE>
+impl<T, const SIZE: usize> core::ops::MulAssign<T> for StaticVector<T, SIZE>
 where
-    T: Copy + std::ops::MulAssign<T>,
+    T: Copy + core::ops::MulAssign<T>,
 {
     fn mul_assign(&mut self, _rhs: T) {
         for item in self.0.iter_mut() {
@@ -176,89 +207,90 @@ where
     }
 }
 
-impl<T, const SIZE: usize> std::ops::Add<T> for StaticVector<T, SIZE>
+impl<T, const SIZE: usize> core::ops::Add<T> for StaticVector<T, SIZE>
 where
-    T: Copy + std::ops::Add<T, Output = T>,
+    T: Copy + core::ops::Add<T, Output = T>,
 {
     type Output = Self;
 
-    fn add(self, _rhs: T) -> Self::Output {
-        let mut temp = self.clone();
-        for item in temp.0.iter_mut() {
+    fn add(mut self, _rhs: T) -> Self::Output {
+        for item in self.0.iter_mut() {
             *item = *item + _rhs;
         }
-        temp
+        self
     }
 }
 
-impl<T, const SIZE: usize> std::ops::Add<Self> for StaticVector<T, SIZE>
+impl<T, const SIZE: usize> core::ops::Add<Self> for StaticVector<T, SIZE>
 where
-    T: Copy + std::ops::Add<T, Output = T>,
+    T: Copy + core::ops::Add<T, Output = T>,
 {
     type Output = Self;
 
-    fn add(self, _rhs: Self) -> Self::Output {
-        let mut temp = self.clone();
-        for (l, r) in temp.0.iter_mut().zip(_rhs.0.iter()) {
-            *l = *l + *r;
+    fn add(mut self, _rhs: Self) -> Self::Output {
+        for (l, r) in self.0.iter_mut().zip(_rhs.0.into_iter()) {
+            *l = *l + r;
         }
-        temp
+        self
     }
 }
 
-impl<T, const SIZE: usize> std::ops::Sub<T> for StaticVector<T, SIZE>
+impl<T, const SIZE: usize> core::ops::Sub<T> for StaticVector<T, SIZE>
 where
-    T: Copy + std::ops::Sub<T, Output = T>,
+    T: Copy + core::ops::Sub<T, Output = T>,
 {
     type Output = Self;
 
-    fn sub(self, _rhs: T) -> Self::Output {
-        let mut temp = self.clone();
-        for item in temp.0.iter_mut() {
+    fn sub(mut self, _rhs: T) -> Self::Output {
+        for item in self.0.iter_mut() {
             *item = *item - _rhs;
         }
-        temp
+        self
     }
 }
 
-impl<T, const SIZE: usize> std::ops::Sub<Self> for StaticVector<T, SIZE>
+impl<T, const SIZE: usize> core::ops::Sub<Self> for StaticVector<T, SIZE>
 where
-    T: Copy + std::ops::Sub<T, Output = T>,
+    T: Copy + core::ops::Sub<T, Output = T>,
 {
     type Output = Self;
 
-    fn sub(self, _rhs: Self) -> Self::Output {
-        let mut temp = self.clone();
-        for (l, r) in temp.0.iter_mut().zip(_rhs.0.iter()) {
-            *l = *l - *r;
+    fn sub(mut self, _rhs: Self) -> Self::Output {
+        for (l, r) in self.0.iter_mut().zip(_rhs.0.into_iter()) {
+            *l = *l - r;
         }
-        temp
+        self
     }
 }
 
-impl<T, const SIZE: usize> std::ops::Mul<T> for StaticVector<T, SIZE>
+impl<T, const SIZE: usize> core::ops::Mul<T> for StaticVector<T, SIZE>
 where
-    T: Copy + std::ops::Mul<T, Output = T>,
+    T: Copy + core::ops::Mul<T, Output = T>,
 {
     type Output = Self;
 
-    fn mul(self, _rhs: T) -> Self::Output {
-        let mut temp = self.clone();
-        for item in temp.0.iter_mut() {
+    fn mul(mut self, _rhs: T) -> Self::Output {
+        for item in self.0.iter_mut() {
             *item = *item * _rhs;
         }
-        temp
+        self
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{ops, StaticVector, Vector};
-    use num_traits::Float;
+    use num_traits::{ConstZero, Float};
 
-    fn within_epsilon<T: Float>(vec_expected: &impl Vector<T>, vec_result: &impl Vector<T>, eps: T) -> bool
-    {
-        vec_expected.iter().zip(vec_result.iter()).all(|(&expected, &result)| (expected - result).abs() < eps)
+    fn within_epsilon<T: Float>(
+        vec_expected: &impl Vector<T>,
+        vec_result: &impl Vector<T>,
+        eps: T,
+    ) -> bool {
+        vec_expected
+            .iter()
+            .zip(vec_result.iter())
+            .all(|(&expected, &result)| (expected - result).abs() < eps)
     }
 
     #[test]
@@ -362,16 +394,15 @@ mod tests {
 
     #[test]
     fn vector_zero() {
-        let zero_vec = StaticVector::<_, 3>::zero();
         let vec = StaticVector([2, 2, 1]);
-        assert_eq!(vec.clone() + zero_vec.clone(), vec.clone());
+        assert_eq!(vec.clone() + StaticVector::ZERO, vec.clone());
     }
 
     #[test]
     fn vector_inverse() {
         let vec = StaticVector([2, 2, 1]);
         let vec_inv = -vec.clone();
-        assert_eq!(vec.clone() + vec_inv.clone(), StaticVector::zero());
+        assert_eq!(vec.clone() + vec_inv.clone(), StaticVector::ZERO);
     }
 
     #[test]
@@ -423,14 +454,29 @@ mod tests {
     fn vector_normalize() {
         let mut vec = StaticVector([3.0, -4.0]);
         ops::normalize(&mut vec);
-        assert!(within_epsilon(&StaticVector([0.6, -0.8]), &vec, f64::EPSILON));
+        assert!(within_epsilon(
+            &StaticVector([0.6, -0.8]),
+            &vec,
+            f64::EPSILON
+        ));
+    }
+
+    #[test]
+    #[should_panic]
+    fn vector_normalize_zero() {
+        let mut vec: StaticVector<f64, 3> = StaticVector::ZERO;
+        ops::normalize(&mut vec);
     }
 
     #[test]
     fn vector_unit_vec() {
         let vec = StaticVector([3.0, -4.0]);
         let unit_vec = ops::unit(vec);
-        assert!(within_epsilon(&StaticVector([0.6, -0.8]), &unit_vec, f64::EPSILON));
+        assert!(within_epsilon(
+            &StaticVector([0.6, -0.8]),
+            &unit_vec,
+            f64::EPSILON
+        ));
     }
 
     #[test]
