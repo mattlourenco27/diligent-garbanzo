@@ -1,4 +1,5 @@
-mod vectors;
+pub mod vectors;
+pub mod sdl_wrapper;
 
 #[cfg(test)]
 mod tests {
