@@ -68,16 +68,16 @@ pub mod ops {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct StaticVector<T, const SIZE: usize>([T; SIZE]);
+pub struct StaticVector<T, const SIZE: usize>(pub [T; SIZE]);
 
 impl<T, const SIZE: usize> StaticVector<T, SIZE> {
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         SIZE
     }
 }
 
 impl<T> StaticVector<T, 3> {
-    fn cross(_lhs: &Self, _rhs: &Self) -> Self
+    pub fn cross(_lhs: &Self, _rhs: &Self) -> Self
     where
         T: Float + core::ops::Add<T, Output = T> + core::ops::Mul<T, Output = T>,
     {
