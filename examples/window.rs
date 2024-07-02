@@ -1,5 +1,5 @@
 use drawsvg::sdl_wrapper::SDLContext;
-use sdl2::event::Event;
+use sdl2::{event::Event, pixels::Color, rect::Rect};
 
 fn main() {
     let mut sdl_context = match SDLContext::new(800, 600) {
@@ -10,6 +10,8 @@ fn main() {
         }
     };
 
+    let mut frames = 0 as u32;
+
     'running: loop {
         for event in sdl_context.event_pump.poll_iter() {
             match event {
@@ -18,11 +20,17 @@ fn main() {
             }
         }
 
-        unsafe {
-            gl::ClearColor(0.9, 0.1, 0.1, 1.0);
-            gl::Clear(gl::COLOR_BUFFER_BIT);
-        }
+        let canvas = &mut sdl_context.canvas;
+        canvas.set_draw_color(Color::RGB(0, 0, 0));
+        canvas.clear();
 
-        sdl_context.window.gl_swap_window();
+        canvas.set_draw_color(Color::RGB(255, 210, 0));
+        canvas.fill_rect(Rect::new(10, 10, 780, 580)).unwrap();
+
+        canvas.present();
+
+        frames += 1;
     }
+
+    println!("There were {} frames", frames);
 }
