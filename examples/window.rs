@@ -11,6 +11,7 @@ fn main() {
     };
 
     let mut frames = 0 as u32;
+    let mut hue: i32 = 0;
 
     'running: loop {
         for event in sdl_context.event_pump.poll_iter() {
@@ -24,12 +25,13 @@ fn main() {
         canvas.set_draw_color(Color::RGB(0, 0, 0));
         canvas.clear();
 
-        canvas.set_draw_color(Color::RGB(255, 210, 0));
+        canvas.set_draw_color(Color::RGB(10, 50, hue as u8));
         canvas.fill_rect(Rect::new(10, 10, 780, 580)).unwrap();
 
         canvas.present();
 
         frames += 1;
+        hue = (hue + 1) % 0xff;
     }
 
     println!("There were {} frames", frames);
