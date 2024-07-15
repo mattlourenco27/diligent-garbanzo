@@ -1,5 +1,7 @@
-pub mod vectors;
+pub mod color;
 pub mod sdl_wrapper;
+pub mod svg;
+pub mod vector;
 
 #[cfg(test)]
 mod tests {
