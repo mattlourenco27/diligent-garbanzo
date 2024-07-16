@@ -7,7 +7,7 @@ pub struct Color {
     pub a: f32,
 }
 
-const NONE: Color = Color {
+pub const NONE: Color = Color {
     r: 0.0,
     g: 0.0,
     b: 0.0,
@@ -28,48 +28,41 @@ pub const BLACK: Color = Color {
     a: 1.0,
 };
 
-impl From<&[u8]> for Color {
-    fn from(value: &[u8]) -> Self {
-        if value == b"none" || value.len() == 0 {
+impl From<&str> for Color {
+    fn from(value: &str) -> Self {
+        if value == "none" || value.len() == 0 {
             return NONE;
         }
-        
-        let hex_bytes;
 
-        let has_leading_pound = value[0] == b'#';
-        if has_leading_pound {
-            hex_bytes = &value[1..];
-        } else {
-            hex_bytes = value;
-        }
-        
-        const INV: f32 = 1.0 / std::u8::MAX as f32;
-        if hex_bytes.len() == 6 {
-            let buffer = match <[u8; 3]>::from_hex(hex_bytes) {
-                Ok(buffer) => buffer,
+        let hex = value.strip_prefix('#').unwrap_or(value);
+
+        const INV: f32 = 1.0 / core::u8::MAX as f32;
+        if hex.len() == 6 {
+            let bytes = match <[u8; 3]>::from_hex(hex) {
+                Ok(bytes) => bytes,
                 Err(_) => return NONE,
             };
             return Color {
-                r : buffer[0] as f32 * INV,
-                g : buffer[1] as f32 * INV,
-                b : buffer[2] as f32 * INV,
-                a : 1.0,
-            }
+                r: bytes[0] as f32 * INV,
+                g: bytes[1] as f32 * INV,
+                b: bytes[2] as f32 * INV,
+                a: 1.0,
+            };
         }
 
-        if hex_bytes.len() == 8 {
-            let buffer = match <[u8; 4]>::from_hex(hex_bytes) {
-                Ok(buffer) => buffer,
+        if hex.len() == 8 {
+            let bytes = match <[u8; 4]>::from_hex(hex) {
+                Ok(bytes) => bytes,
                 Err(_) => return NONE,
             };
             return Color {
-                r : buffer[0] as f32 * INV,
-                g : buffer[1] as f32 * INV,
-                b : buffer[2] as f32 * INV,
-                a : buffer[3] as f32 * INV,
-            }
+                r: bytes[0] as f32 * INV,
+                g: bytes[1] as f32 * INV,
+                b: bytes[2] as f32 * INV,
+                a: bytes[3] as f32 * INV,
+            };
         }
 
-        return NONE;
+        NONE
     }
 }

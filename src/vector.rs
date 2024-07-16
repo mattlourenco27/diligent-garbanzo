@@ -70,6 +70,9 @@ pub mod ops {
 #[derive(Clone, Debug, PartialEq)]
 pub struct StaticVector<T, const SIZE: usize>(pub [T; SIZE]);
 
+pub type Vector2D<T> = StaticVector<T, 2>;
+pub type Vector3D<T> = StaticVector<T, 3>;
+
 impl<T, const SIZE: usize> StaticVector<T, SIZE> {
     pub fn len(&self) -> usize {
         SIZE

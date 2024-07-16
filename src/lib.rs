@@ -1,6 +1,7 @@
 pub mod color;
 pub mod sdl_wrapper;
 pub mod svg;
+pub mod texture;
 pub mod vector;
 
 #[cfg(test)]

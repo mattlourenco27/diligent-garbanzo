@@ -1,5 +1,5 @@
 use drawsvg::sdl_wrapper::SDLContext;
-use sdl2::{event::Event, pixels::Color, rect::Rect};
+use sdl2::{event::Event, pixels::Color, rect::{Point, Rect}};
 
 fn main() {
     let mut sdl_context = match SDLContext::new(800, 600) {
@@ -28,10 +28,13 @@ fn main() {
         canvas.set_draw_color(Color::RGB(10, 50, hue as u8));
         canvas.fill_rect(Rect::new(10, 10, 780, 580)).unwrap();
 
+        canvas.set_draw_color(Color::RGB(100, 0, 0));
+        canvas.draw_point(Point::new(15, 15)).unwrap();
+
         canvas.present();
 
         frames += 1;
-        hue = (hue + 1) % 0xff;
+        hue = (hue + 1) % (core::u8::MAX as i32);
     }
 
     println!("There were {} frames", frames);
