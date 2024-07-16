@@ -67,6 +67,7 @@ impl std::error::Error for Error {
     }
 }
 
+#[derive(Debug)]
 enum Element {
     None,
     Point(Point),
@@ -80,39 +81,160 @@ enum Element {
     SVG(SVG),
 }
 
+#[derive(Debug)]
 struct Point {
     style: Style,
     position: Vector2D<f64>,
 }
 
+impl Point {
+    fn from_bytes_start(bytes: BytesStart) -> Result<Self, Error> {
+        let style = Style::from_attributes(bytes.attributes().clone())?;
+
+        let mut x: f64 = 0.0;
+        let mut y: f64 = 0.0;
+
+        for attribute in bytes.attributes() {
+            let attribute = attribute?;
+            match attribute.key.local_name().into_inner() {
+                b"x" => x = f64::from_str(attribute.unescape_value()?.as_ref())?,
+                b"y" => y = f64::from_str(attribute.unescape_value()?.as_ref())?,
+                _ => (),
+            };
+        }
+
+        Ok(Self {
+            style,
+            position: StaticVector([x, y]),
+        })
+    }
+}
+
+#[derive(Debug)]
 struct Line {
     style: Style,
     from: Vector2D<f64>,
     to: Vector2D<f64>,
 }
 
+impl Line {
+    fn from_bytes_start(bytes: BytesStart) -> Result<Self, Error> {
+        let style = Style::from_attributes(bytes.attributes().clone())?;
+
+        let mut x1: f64 = 0.0;
+        let mut y1: f64 = 0.0;
+        let mut x2: f64 = 0.0;
+        let mut y2: f64 = 0.0;
+
+        for attribute in bytes.attributes() {
+            let attribute = attribute?;
+            match attribute.key.local_name().into_inner() {
+                b"x1" => x1 = f64::from_str(attribute.unescape_value()?.as_ref())?,
+                b"y1" => y1 = f64::from_str(attribute.unescape_value()?.as_ref())?,
+                b"x2" => x2 = f64::from_str(attribute.unescape_value()?.as_ref())?,
+                b"y2" => y2 = f64::from_str(attribute.unescape_value()?.as_ref())?,
+                _ => (),
+            };
+        }
+
+        Ok(Self {
+            style,
+            from: StaticVector([x1, y1]),
+            to: StaticVector([x2, y2]),
+        })
+    }
+}
+
+#[derive(Debug)]
 struct Polyline {
     style: Style,
     position: Vec<Vector2D<f64>>,
 }
 
+#[derive(Debug)]
 struct Rect {
     style: Style,
     position: Vector2D<f64>,
     dimension: Vector2D<f64>,
 }
 
+impl Rect {
+    fn from_bytes_start(bytes: BytesStart) -> Result<Element, Error> {
+        let style = Style::from_attributes(bytes.attributes().clone())?;
+
+        let mut x: f64 = 0.0;
+        let mut y: f64 = 0.0;
+        let mut width: f64 = 0.0;
+        let mut height: f64 = 0.0;
+
+        for attribute in bytes.attributes() {
+            let attribute = attribute?;
+            match attribute.key.local_name().into_inner() {
+                b"x" => x = f64::from_str(attribute.unescape_value()?.as_ref())?,
+                b"y" => y = f64::from_str(attribute.unescape_value()?.as_ref())?,
+                b"width" => width = f64::from_str(attribute.unescape_value()?.as_ref())?,
+                b"height" => height = f64::from_str(attribute.unescape_value()?.as_ref())?,
+                _ => (),
+            };
+        }
+
+        if width == 0.0 && height == 0.0 {
+            return Ok(Element::Point(Point {
+                style,
+                position: StaticVector([x, y]),
+            }));
+        }
+
+        Ok(Element::Rect(Rect {
+            style,
+            position: StaticVector([x, y]),
+            dimension: StaticVector([width, height]),
+        }))
+    }
+}
+
+#[derive(Debug)]
 struct Polygon {
     style: Style,
     position: Vec<Vector2D<f64>>,
 }
 
+#[derive(Debug)]
 struct Ellipse {
     style: Style,
     center: Vector2D<f64>,
     radius: Vector2D<f64>,
 }
 
+impl Ellipse {
+    fn from_bytes_start(bytes: BytesStart) -> Result<Self, Error> {
+        let style = Style::from_attributes(bytes.attributes().clone())?;
+
+        let mut cx: f64 = 0.0;
+        let mut cy: f64 = 0.0;
+        let mut rx: f64 = 0.0;
+        let mut ry: f64 = 0.0;
+
+        for attribute in bytes.attributes() {
+            let attribute = attribute?;
+            match attribute.key.local_name().into_inner() {
+                b"cx" => cx = f64::from_str(attribute.unescape_value()?.as_ref())?,
+                b"cy" => cy = f64::from_str(attribute.unescape_value()?.as_ref())?,
+                b"rx" => rx = f64::from_str(attribute.unescape_value()?.as_ref())?,
+                b"ry" => ry = f64::from_str(attribute.unescape_value()?.as_ref())?,
+                _ => (),
+            };
+        }
+
+        Ok(Self {
+            style,
+            center: StaticVector([cx, cy]),
+            radius: StaticVector([rx, ry]),
+        })
+    }
+}
+
+#[derive(Debug)]
 struct Image {
     style: Style,
     position: Vector2D<f64>,
@@ -120,11 +242,13 @@ struct Image {
     texture: Texture,
 }
 
+#[derive(Debug)]
 struct Group {
     style: Style,
     elements: Vec<Element>,
 }
 
+#[derive(Debug)]
 pub struct SVG {
     dimension: Vector2D<f64>,
     elements: Vec<Element>,
@@ -151,6 +275,7 @@ impl SVG {
     }
 }
 
+#[derive(Debug)]
 struct Style {
     stroke_color: Color,
     fill_color: Color,
@@ -213,12 +338,12 @@ fn handle_start_tag_bytes(bytes: BytesStart) -> Result<Element, Error> {
 
 fn handle_empty_tag_bytes(bytes: BytesStart) -> Result<Element, Error> {
     match bytes.local_name().into_inner() {
-        b"point" => unimplemented!(),
-        b"line" => unimplemented!(),
+        b"point" => Ok(Element::Point(Point::from_bytes_start(bytes)?)),
+        b"line" => Ok(Element::Line(Line::from_bytes_start(bytes)?)),
         b"polyline" => unimplemented!(),
-        b"rect" => unimplemented!(),
+        b"rect" => Ok(Rect::from_bytes_start(bytes)?),
         b"polygon" => unimplemented!(),
-        b"ellipse" => unimplemented!(),
+        b"ellipse" => Ok(Element::Ellipse(Ellipse::from_bytes_start(bytes)?)),
         b"image" => unimplemented!(),
         b"group" => unimplemented!(),
         unrecognized => Err(Error::UnrecognizedTag(String::from_utf8(
@@ -244,31 +369,16 @@ fn read_next_event(reader: &mut NsReader<BufReader<File>>) -> Result<Element, Er
 pub fn read_from_file(path: &Path) -> Result<SVG, Error> {
     let mut reader = NsReader::from_file(path)?;
 
-    let mut buf = Vec::new();
-    let mut txt = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf)? {
-            Event::Start(e) => handle_tag_bytes_start(e),
-            Event::Text(e) => txt.push(e.unescape()?.into_owned()),
-            Event::End(e) => {}
-            Event::Empty(e) => {
-                let local = e.local_name();
-                let attributes = e.attributes();
-                for attribute in attributes {
-                    let attribute = match attribute {
-                        Ok(attribute) => attribute,
-                        Err(err) => return Err(Error::from(quick_xml::errors::Error::from(err))),
-                    };
-                    if attribute.key.local_name().into_inner() == b"fill" {
-                        let raw_color = [50, 50, 50, 50];
-                    }
-                }
-            }
-            Event::Eof => break,
-            _ => (),
-        };
-        buf.clear();
-    }
+    let ret = SVG {
+        dimension: StaticVector([0.0, 0.0]),
+        elements: Vec::new(),
+    };
 
-    Ok(())
+    loop {
+        let element = read_next_event(&mut reader)?;
+        match element {
+            Element::None => return Ok(ret),
+            other => dbg!(other),
+        };
+    }
 }
