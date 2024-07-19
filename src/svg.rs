@@ -14,62 +14,79 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub enum Error {
+pub enum ReadError {
     XMLError(quick_xml::errors::Error),
     FromUtf8Error(FromUtf8Error),
     ParseFloatError(ParseFloatError),
+}
+
+#[derive(Debug)]
+enum EventStatus {
+    Error(ReadError),
     UnrecognizedTag(String),
+    SkippedTag,
+    Eof,
 }
 
-impl From<quick_xml::errors::Error> for Error {
+impl From<ReadError> for EventStatus {
+    fn from(value: ReadError) -> Self {
+        Self::Error(value)
+    }
+}
+
+impl From<quick_xml::errors::Error> for EventStatus {
     fn from(value: quick_xml::errors::Error) -> Self {
-        return Self::XMLError(value);
+        Self::Error(ReadError::XMLError(value))
     }
 }
 
-impl From<quick_xml::events::attributes::AttrError> for Error {
+impl From<quick_xml::errors::Error> for ReadError {
+    fn from(value: quick_xml::errors::Error) -> Self {
+        Self::XMLError(value)
+    }
+}
+
+impl From<quick_xml::events::attributes::AttrError> for ReadError {
     fn from(value: quick_xml::events::attributes::AttrError) -> Self {
-        return Self::XMLError(value.into());
+        Self::XMLError(value.into())
     }
 }
 
-impl From<FromUtf8Error> for Error {
+impl From<FromUtf8Error> for EventStatus {
     fn from(value: FromUtf8Error) -> Self {
-        return Self::FromUtf8Error(value);
+        Self::Error(ReadError::FromUtf8Error(value))
     }
 }
 
-impl From<ParseFloatError> for Error {
+impl From<ParseFloatError> for ReadError {
     fn from(value: ParseFloatError) -> Self {
-        return Self::ParseFloatError(value);
+        Self::ParseFloatError(value)
     }
 }
 
-impl std::fmt::Display for Error {
+impl std::fmt::Display for ReadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::XMLError(err) => write!(f, "XML Error: {}", err),
             Self::FromUtf8Error(err) => write!(f, "Could not convert to UTF-8: {}", err),
             Self::ParseFloatError(err) => write!(f, "Could not parse float: {}", err),
-            Self::UnrecognizedTag(err) => write!(f, "Unrecognized tag: {}", err),
         }
     }
 }
 
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+impl std::fmt::Display for EventStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::XMLError(err) => Some(err),
-            Self::FromUtf8Error(err) => Some(err),
-            Self::ParseFloatError(err) => Some(err),
-            Self::UnrecognizedTag(_) => None,
+            Self::Error(err) => err.fmt(f),
+            Self::UnrecognizedTag(err) => write!(f, "Unrecognized tag: {}", err),
+            Self::SkippedTag => write!(f, "Tag was not read (skipped)"),
+            Self::Eof => write!(f, "Reached end of file"),
         }
     }
 }
 
 #[derive(Debug)]
 enum Element {
-    None,
     Point(Point),
     Line(Line),
     Polyline(Polyline),
@@ -88,7 +105,7 @@ struct Point {
 }
 
 impl Point {
-    fn from_bytes_start(bytes: BytesStart) -> Result<Self, Error> {
+    fn from_bytes_start(bytes: BytesStart) -> Result<Self, ReadError> {
         let style = Style::from_attributes(bytes.attributes().clone())?;
 
         let mut x: f64 = 0.0;
@@ -118,7 +135,7 @@ struct Line {
 }
 
 impl Line {
-    fn from_bytes_start(bytes: BytesStart) -> Result<Self, Error> {
+    fn from_bytes_start(bytes: BytesStart) -> Result<Self, ReadError> {
         let style = Style::from_attributes(bytes.attributes().clone())?;
 
         let mut x1: f64 = 0.0;
@@ -159,7 +176,7 @@ struct Rect {
 }
 
 impl Rect {
-    fn from_bytes_start(bytes: BytesStart) -> Result<Element, Error> {
+    fn from_bytes_start(bytes: BytesStart) -> Result<Element, ReadError> {
         let style = Style::from_attributes(bytes.attributes().clone())?;
 
         let mut x: f64 = 0.0;
@@ -207,7 +224,7 @@ struct Ellipse {
 }
 
 impl Ellipse {
-    fn from_bytes_start(bytes: BytesStart) -> Result<Self, Error> {
+    fn from_bytes_start(bytes: BytesStart) -> Result<Self, ReadError> {
         let style = Style::from_attributes(bytes.attributes().clone())?;
 
         let mut cx: f64 = 0.0;
@@ -255,7 +272,7 @@ pub struct SVG {
 }
 
 impl SVG {
-    fn from_bytes_start(bytes: BytesStart) -> Result<Self, Error> {
+    fn from_bytes_start(bytes: BytesStart) -> Result<Self, ReadError> {
         let mut width: f64 = 300.0;
         let mut height: f64 = 150.0;
 
@@ -284,7 +301,7 @@ struct Style {
 }
 
 impl Style {
-    fn from_attributes(attributes: Attributes) -> Result<Self, Error> {
+    fn from_attributes(attributes: Attributes) -> Result<Self, ReadError> {
         let mut stroke_color: Color = color::NONE;
         let mut fill_color: Color = color::NONE;
         let mut stroke_width: f64 = 1.0;
@@ -327,16 +344,16 @@ fn pixels_to_dim(pixels: &str) -> Result<f64, ParseFloatError> {
     f64::from_str(dim_str)
 }
 
-fn handle_start_tag_bytes(bytes: BytesStart) -> Result<Element, Error> {
+fn handle_start_tag_bytes(bytes: BytesStart) -> Result<Element, EventStatus> {
     match bytes.local_name().into_inner() {
         b"svg" => Ok(Element::SVG(SVG::from_bytes_start(bytes)?)),
-        unrecognized => Err(Error::UnrecognizedTag(String::from_utf8(
+        unrecognized => Err(EventStatus::UnrecognizedTag(String::from_utf8(
             unrecognized.to_owned(),
         )?)),
     }
 }
 
-fn handle_empty_tag_bytes(bytes: BytesStart) -> Result<Element, Error> {
+fn handle_empty_tag_bytes(bytes: BytesStart) -> Result<Element, EventStatus> {
     match bytes.local_name().into_inner() {
         b"point" => Ok(Element::Point(Point::from_bytes_start(bytes)?)),
         b"line" => Ok(Element::Line(Line::from_bytes_start(bytes)?)),
@@ -346,27 +363,27 @@ fn handle_empty_tag_bytes(bytes: BytesStart) -> Result<Element, Error> {
         b"ellipse" => Ok(Element::Ellipse(Ellipse::from_bytes_start(bytes)?)),
         b"image" => unimplemented!(),
         b"group" => unimplemented!(),
-        unrecognized => Err(Error::UnrecognizedTag(String::from_utf8(
+        unrecognized => Err(EventStatus::UnrecognizedTag(String::from_utf8(
             unrecognized.to_owned(),
         )?)),
     }
 }
 
-fn read_next_event(reader: &mut NsReader<BufReader<File>>) -> Result<Element, Error> {
+fn read_next_event(reader: &mut NsReader<BufReader<File>>) -> Result<Element, EventStatus> {
     let mut buf = Vec::new();
 
     let next_event = reader.read_event_into(&mut buf)?;
     match next_event {
         Event::Start(event) => handle_start_tag_bytes(event),
-        Event::Text(event) => unimplemented!(),
+        // Event::Text(event) => unimplemented!(),
         Event::End(event) => unimplemented!(),
         Event::Empty(event) => handle_empty_tag_bytes(event),
-        Event::Eof => Ok(Element::None),
-        _ => Ok(Element::None),
+        Event::Eof => Err(EventStatus::Eof),
+        _ => Err(EventStatus::SkippedTag),
     }
 }
 
-pub fn read_from_file(path: &Path) -> Result<SVG, Error> {
+pub fn read_from_file(path: &Path) -> Result<SVG, ReadError> {
     let mut reader = NsReader::from_file(path)?;
 
     let ret = SVG {
@@ -375,10 +392,16 @@ pub fn read_from_file(path: &Path) -> Result<SVG, Error> {
     };
 
     loop {
-        let element = read_next_event(&mut reader)?;
-        match element {
-            Element::None => return Ok(ret),
-            other => dbg!(other),
+        match read_next_event(&mut reader) {
+            Ok(element) => (),
+            Err(status) => match status {
+                EventStatus::Error(err) => return Err(err),
+                EventStatus::UnrecognizedTag(_) => println!("{}", status),
+                EventStatus::SkippedTag => (),
+                EventStatus::Eof => break,
+            },
         };
     }
+
+    Ok(ret)
 }

@@ -1,4 +1,6 @@
-# Cargo
+# vscode
+.vscode/
 
+# Cargo
 /target
 Cargo.lock
