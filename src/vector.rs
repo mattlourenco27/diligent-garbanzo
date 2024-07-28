@@ -503,4 +503,10 @@ mod tests {
             StaticVector::cross(&vec1, &vec2)
         );
     }
+
+    #[test]
+    fn vector_len() {
+        let vec = StaticVector([1, 2, 3, 4]);
+        assert_eq!(4, vec.len());
+    }
 }
