@@ -3,7 +3,7 @@ use std::{
 };
 
 use quick_xml::{
-    events::{attributes::Attributes, BytesStart, Event},
+    events::{attributes::Attributes, BytesEnd, BytesStart, Event},
     NsReader,
 };
 
@@ -15,17 +15,19 @@ use crate::{
 
 #[derive(Debug)]
 pub enum ReadError {
-    XMLError(quick_xml::errors::Error),
+    EndTagBeforeStart,
     FromUtf8Error(FromUtf8Error),
+    MissingSVGTag,
     ParseFloatError(ParseFloatError),
+    XMLError(quick_xml::errors::Error),
 }
 
 #[derive(Debug)]
 enum EventStatus {
-    Error(ReadError),
-    UnrecognizedTag(String),
-    SkippedTag,
     Eof,
+    Error(ReadError),
+    SkippedTag,
+    UnrecognizedTag(String),
 }
 
 impl From<ReadError> for EventStatus {
@@ -67,9 +69,14 @@ impl From<ParseFloatError> for ReadError {
 impl std::fmt::Display for ReadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::XMLError(err) => write!(f, "XML Error: {}", err),
+            Self::EndTagBeforeStart => write!(
+                f,
+                "An end tag was found before it's corresponding start tag"
+            ),
             Self::FromUtf8Error(err) => write!(f, "Could not convert to UTF-8: {}", err),
+            Self::MissingSVGTag => write!(f, "Could not find an svg tag at the top level"),
             Self::ParseFloatError(err) => write!(f, "Could not parse float: {}", err),
+            Self::XMLError(err) => write!(f, "XML Error: {}", err),
         }
     }
 }
@@ -77,25 +84,97 @@ impl std::fmt::Display for ReadError {
 impl std::fmt::Display for EventStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Error(err) => err.fmt(f),
-            Self::UnrecognizedTag(err) => write!(f, "Unrecognized tag: {}", err),
-            Self::SkippedTag => write!(f, "Tag was not read (skipped)"),
             Self::Eof => write!(f, "Reached end of file"),
+            Self::Error(err) => err.fmt(f),
+            Self::SkippedTag => write!(f, "Tag was not read (skipped)"),
+            Self::UnrecognizedTag(err) => write!(f, "Unrecognized tag: {}", err),
         }
     }
 }
 
 #[derive(Debug)]
 enum Element {
-    Point(Point),
-    Line(Line),
-    Polyline(Polyline),
-    Rect(Rect),
-    Polygon(Polygon),
+    EmptyTag(EmptyTag),
+    EndTag(EndTag),
+    StartTag(StartTag),
+}
+
+#[derive(Debug)]
+enum EmptyTag {
     Ellipse(Ellipse),
     Image(Image),
+    Line(Line),
+    Point(Point),
+    Polygon(Polygon),
+    Polyline(Polyline),
+    Rect(Rect),
+}
+
+impl EmptyTag {
+    fn from_empty_tag_bytes(bytes: BytesStart) -> Result<EmptyTag, EventStatus> {
+        match bytes.local_name().into_inner() {
+            b"point" => Ok(EmptyTag::Point(Point::from_bytes_start(bytes)?)),
+            b"line" => Ok(EmptyTag::Line(Line::from_bytes_start(bytes)?)),
+            b"polyline" => unimplemented!(),
+            b"rect" => Ok(Rect::from_bytes_start(bytes)?),
+            b"polygon" => unimplemented!(),
+            b"ellipse" => Ok(EmptyTag::Ellipse(Ellipse::from_bytes_start(bytes)?)),
+            b"image" => unimplemented!(),
+            unrecognized => Err(EventStatus::UnrecognizedTag(String::from_utf8(
+                unrecognized.to_owned(),
+            )?)),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum EndTag {
+    Group,
+    SVG,
+}
+
+impl EndTag {
+    fn from_end_tag_bytes(bytes: BytesEnd) -> Result<EndTag, EventStatus> {
+        match bytes.local_name().into_inner() {
+            b"group" => Ok(EndTag::Group),
+            b"svg" => Ok(EndTag::SVG),
+            unrecognized => Err(EventStatus::UnrecognizedTag(String::from_utf8(
+                unrecognized.to_owned(),
+            )?)),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum StartTag {
     Group(Group),
     SVG(SVG),
+}
+
+impl StartTag {
+    fn get_expected_end_tag(&self) -> EndTag {
+        match self {
+            StartTag::Group(..) => EndTag::Group,
+            StartTag::SVG(..) => EndTag::SVG,
+        }
+    }
+
+    fn add_element(&mut self, element: Element) {
+        match self {
+            StartTag::Group(group) => group.elements.push(element),
+            StartTag::SVG(svg) => svg.elements.push(element),
+        }
+    }
+
+    fn from_start_tag_bytes(bytes: BytesStart) -> Result<Self, EventStatus> {
+        match bytes.local_name().into_inner() {
+            b"group" => unimplemented!(),
+            b"svg" => Ok(StartTag::SVG(SVG::from_bytes_start(bytes)?)),
+            unrecognized => Err(EventStatus::UnrecognizedTag(String::from_utf8(
+                unrecognized.to_owned(),
+            )?)),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -176,7 +255,7 @@ struct Rect {
 }
 
 impl Rect {
-    fn from_bytes_start(bytes: BytesStart) -> Result<Element, ReadError> {
+    fn from_bytes_start(bytes: BytesStart) -> Result<EmptyTag, ReadError> {
         let style = Style::from_attributes(bytes.attributes().clone())?;
 
         let mut x: f64 = 0.0;
@@ -196,13 +275,13 @@ impl Rect {
         }
 
         if width == 0.0 && height == 0.0 {
-            return Ok(Element::Point(Point {
+            return Ok(EmptyTag::Point(Point {
                 style,
                 position: StaticVector([x, y]),
             }));
         }
 
-        Ok(Element::Rect(Rect {
+        Ok(EmptyTag::Rect(Rect {
             style,
             position: StaticVector([x, y]),
             dimension: StaticVector([width, height]),
@@ -344,56 +423,78 @@ fn pixels_to_dim(pixels: &str) -> Result<f64, ParseFloatError> {
     f64::from_str(dim_str)
 }
 
-fn handle_start_tag_bytes(bytes: BytesStart) -> Result<Element, EventStatus> {
-    match bytes.local_name().into_inner() {
-        b"svg" => Ok(Element::SVG(SVG::from_bytes_start(bytes)?)),
-        unrecognized => Err(EventStatus::UnrecognizedTag(String::from_utf8(
-            unrecognized.to_owned(),
-        )?)),
-    }
-}
-
-fn handle_empty_tag_bytes(bytes: BytesStart) -> Result<Element, EventStatus> {
-    match bytes.local_name().into_inner() {
-        b"point" => Ok(Element::Point(Point::from_bytes_start(bytes)?)),
-        b"line" => Ok(Element::Line(Line::from_bytes_start(bytes)?)),
-        b"polyline" => unimplemented!(),
-        b"rect" => Ok(Rect::from_bytes_start(bytes)?),
-        b"polygon" => unimplemented!(),
-        b"ellipse" => Ok(Element::Ellipse(Ellipse::from_bytes_start(bytes)?)),
-        b"image" => unimplemented!(),
-        b"group" => unimplemented!(),
-        unrecognized => Err(EventStatus::UnrecognizedTag(String::from_utf8(
-            unrecognized.to_owned(),
-        )?)),
-    }
-}
-
 fn read_next_event(reader: &mut NsReader<BufReader<File>>) -> Result<Element, EventStatus> {
     let mut buf = Vec::new();
 
     let next_event = reader.read_event_into(&mut buf)?;
     match next_event {
-        Event::Start(event) => handle_start_tag_bytes(event),
+        Event::Start(start_tag_bytes) => Ok(Element::StartTag(StartTag::from_start_tag_bytes(
+            start_tag_bytes,
+        )?)),
         // Event::Text(event) => unimplemented!(),
-        Event::End(event) => unimplemented!(),
-        Event::Empty(event) => handle_empty_tag_bytes(event),
+        Event::End(end_tag_bytes) => {
+            Ok(Element::EndTag(EndTag::from_end_tag_bytes(end_tag_bytes)?))
+        }
+        Event::Empty(empty_tag_bytes) => Ok(Element::EmptyTag(EmptyTag::from_empty_tag_bytes(
+            empty_tag_bytes,
+        )?)),
         Event::Eof => Err(EventStatus::Eof),
         _ => Err(EventStatus::SkippedTag),
+    }
+}
+
+fn handle_next_element(
+    tag_lifo: &mut Vec<StartTag>,
+    element: Element,
+) -> Result<Option<SVG>, ReadError> {
+    match element {
+        Element::EmptyTag(..) => match tag_lifo.last_mut() {
+            None => Err(ReadError::MissingSVGTag),
+            Some(last) => {
+                last.add_element(element);
+                Ok(None)
+            }
+        },
+        Element::StartTag(start_tag) => {
+            tag_lifo.push(start_tag);
+            Ok(None)
+        }
+        Element::EndTag(end_tag) => {
+            let completed_element = match tag_lifo.pop() {
+                None => return Err(ReadError::EndTagBeforeStart),
+                Some(last) => {
+                    if end_tag != last.get_expected_end_tag() {
+                        return Err(ReadError::EndTagBeforeStart);
+                    }
+                    last
+                }
+            };
+
+            match tag_lifo.last_mut() {
+                None => match completed_element {
+                    StartTag::Group(..) => Err(ReadError::MissingSVGTag),
+                    StartTag::SVG(svg) => Ok(Some(svg)),
+                },
+                Some(last) => {
+                    last.add_element(Element::StartTag(completed_element));
+                    Ok(None)
+                }
+            }
+        }
     }
 }
 
 pub fn read_from_file(path: &Path) -> Result<SVG, ReadError> {
     let mut reader = NsReader::from_file(path)?;
 
-    let ret = SVG {
-        dimension: StaticVector([0.0, 0.0]),
-        elements: Vec::new(),
-    };
+    let mut tag_lifo = Vec::new();
 
     loop {
         match read_next_event(&mut reader) {
-            Ok(element) => (),
+            Ok(element) => match handle_next_element(&mut tag_lifo, element)? {
+                Some(svg) => return Ok(svg),
+                None => (),
+            },
             Err(status) => match status {
                 EventStatus::Error(err) => return Err(err),
                 EventStatus::UnrecognizedTag(_) => println!("{}", status),
@@ -403,5 +504,5 @@ pub fn read_from_file(path: &Path) -> Result<SVG, ReadError> {
         };
     }
 
-    Ok(ret)
+    Err(ReadError::MissingSVGTag)
 }
