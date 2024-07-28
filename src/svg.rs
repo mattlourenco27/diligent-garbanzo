@@ -115,9 +115,9 @@ impl EmptyTag {
         match bytes.local_name().into_inner() {
             b"point" => Ok(EmptyTag::Point(Point::from_bytes_start(bytes)?)),
             b"line" => Ok(EmptyTag::Line(Line::from_bytes_start(bytes)?)),
-            b"polyline" => unimplemented!(),
+            b"polyline" => Ok(EmptyTag::Polyline(Polyline::from_bytes_start(bytes)?)),
             b"rect" => Ok(Rect::from_bytes_start(bytes)?),
-            b"polygon" => unimplemented!(),
+            b"polygon" => Ok(EmptyTag::Polygon(Polygon::from_bytes_start(bytes)?)),
             b"ellipse" => Ok(EmptyTag::Ellipse(Ellipse::from_bytes_start(bytes)?)),
             b"image" => unimplemented!(),
             unrecognized => Err(EventStatus::UnrecognizedTag(String::from_utf8(
@@ -136,7 +136,7 @@ enum EndTag {
 impl EndTag {
     fn from_end_tag_bytes(bytes: BytesEnd) -> Result<EndTag, EventStatus> {
         match bytes.local_name().into_inner() {
-            b"group" => Ok(EndTag::Group),
+            b"g" => Ok(EndTag::Group),
             b"svg" => Ok(EndTag::SVG),
             unrecognized => Err(EventStatus::UnrecognizedTag(String::from_utf8(
                 unrecognized.to_owned(),
@@ -168,7 +168,7 @@ impl StartTag {
 
     fn from_start_tag_bytes(bytes: BytesStart) -> Result<Self, EventStatus> {
         match bytes.local_name().into_inner() {
-            b"group" => unimplemented!(),
+            b"g" => unimplemented!(),
             b"svg" => Ok(StartTag::SVG(SVG::from_bytes_start(bytes)?)),
             unrecognized => Err(EventStatus::UnrecognizedTag(String::from_utf8(
                 unrecognized.to_owned(),
@@ -244,7 +244,32 @@ impl Line {
 #[derive(Debug)]
 struct Polyline {
     style: Style,
-    position: Vec<Vector2D<f64>>,
+    points: Vec<Vector2D<f64>>,
+}
+
+impl Polyline {
+    fn from_bytes_start(bytes: BytesStart) -> Result<Self, ReadError> {
+        let style = Style::from_attributes(bytes.attributes().clone())?;
+
+        let mut points = Vec::new();
+
+        for attribute in bytes.attributes() {
+            let attribute = attribute?;
+            match attribute.key.local_name().into_inner() {
+                b"points" => {
+                    for point_str in attribute.unescape_value()?.split_whitespace() {
+                        let (x_str, y_str) = point_str.split_once(',').unwrap();
+                        let x = f64::from_str(x_str)?;
+                        let y = f64::from_str(y_str)?;
+                        points.push(StaticVector([x, y]))
+                    }
+                }
+                _ => (),
+            };
+        }
+
+        Ok(Self { style, points })
+    }
 }
 
 #[derive(Debug)]
@@ -292,7 +317,32 @@ impl Rect {
 #[derive(Debug)]
 struct Polygon {
     style: Style,
-    position: Vec<Vector2D<f64>>,
+    points: Vec<Vector2D<f64>>,
+}
+
+impl Polygon {
+    fn from_bytes_start(bytes: BytesStart) -> Result<Self, ReadError> {
+        let style = Style::from_attributes(bytes.attributes().clone())?;
+
+        let mut points = Vec::new();
+
+        for attribute in bytes.attributes() {
+            let attribute = attribute?;
+            match attribute.key.local_name().into_inner() {
+                b"points" => {
+                    for point_str in attribute.unescape_value()?.split_whitespace() {
+                        let (x_str, y_str) = point_str.split_once(',').unwrap();
+                        let x = f64::from_str(x_str)?;
+                        let y = f64::from_str(y_str)?;
+                        points.push(StaticVector([x, y]))
+                    }
+                }
+                _ => (),
+            };
+        }
+
+        Ok(Self { style, points })
+    }
 }
 
 #[derive(Debug)]
