@@ -6,21 +6,21 @@ pub struct StaticMatrix<T, const ROWS: usize, const COLS: usize>(pub [[T; COLS];
 pub type Matrix3x3<T> = StaticMatrix<T, 3, 3>;
 
 impl<T, const ROWS: usize, const COLS: usize> StaticMatrix<T, ROWS, COLS> {
-    fn num_rows(&self) -> usize {
+    pub fn num_rows(&self) -> usize {
         ROWS
     }
 
-    fn num_cols(&self) -> usize {
+    pub fn num_cols(&self) -> usize {
         COLS
     }
 
-    fn dim(&self) -> (usize, usize) {
+    pub fn dim(&self) -> (usize, usize) {
         (self.num_rows(), self.num_cols())
     }
 }
 
 impl<T, const SIZE: usize> StaticMatrix<T, SIZE, SIZE> {
-    fn identity() -> Self
+    pub fn identity() -> Self
     where
         T: ConstZero + Copy + One + PartialEq,
     {

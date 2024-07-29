@@ -1,14 +1,16 @@
 use std::{
-    fs::File, io::BufReader, num::ParseFloatError, path::Path, str::FromStr, string::FromUtf8Error,
+    borrow::Cow, fs::File, io::BufReader, num::ParseFloatError, path::Path, str::FromStr,
+    string::FromUtf8Error,
 };
 
 use quick_xml::{
-    events::{attributes::Attributes, BytesEnd, BytesStart, Event},
+    events::{BytesEnd, BytesStart, Event},
     NsReader,
 };
 
 use crate::{
     color::{self, Color},
+    matrix::Matrix3x3,
     texture::Texture,
     vector::{StaticVector, Vector2D},
 };
@@ -178,6 +180,97 @@ impl StartTag {
 }
 
 #[derive(Debug)]
+struct Attribute<'a> {
+    pub key: &'a [u8],
+    value: Cow<'a, str>,
+}
+
+impl<'a> Attribute<'a> {
+    fn parse(attribute: quick_xml::events::attributes::Attribute<'a>) -> Result<Self, ReadError> {
+        Ok(Attribute {
+            key: attribute.key.local_name().into_inner(),
+            value: attribute.unescape_value()?,
+        })
+    }
+
+    fn color(&self) -> Color {
+        Color::from(self.value.as_ref())
+    }
+
+    fn length(&self) -> Result<f64, ReadError> {
+        const SUPPORTED_UNITS: [(&str, f64); 7] = [
+            ("cm", 9600.0 / 254.0),
+            ("mm", 960.0 / 254.0),
+            ("Q", 240.0 / 254.0),
+            ("in", 96.0),
+            ("pc", 16.0),
+            ("pt", 96.0 / 72.0),
+            ("px", 1.0),
+        ];
+
+        let trimmed_str = self.value.trim();
+        let mut numeric_str = trimmed_str;
+        let mut modifier = 1.0;
+        for (unit, val_to_px) in SUPPORTED_UNITS.iter() {
+            match trimmed_str.strip_suffix(unit) {
+                None => continue,
+                Some(value) => {
+                    numeric_str = value;
+                    modifier = *val_to_px;
+                    break;
+                }
+            }
+        }
+        Ok(f64::from_str(numeric_str)? * modifier)
+    }
+
+    fn parse_number(raw_str: &str) -> Result<f64, ParseFloatError> {
+        Ok(f64::from_str(raw_str.trim())?)
+    }
+
+    fn number(&self) -> Result<f64, ParseFloatError> {
+        Attribute::parse_number(self.value.as_ref())
+    }
+
+    fn number_list(&self) -> Result<Vec<f64>, ReadError> {
+        let mut numbers = Vec::new();
+
+        const VALID_DELIMITERS: [char; 2] = [' ', ','];
+        for float_str in self.value.split(VALID_DELIMITERS) {
+            if !float_str.is_empty() {
+                numbers.push(Attribute::parse_number(float_str)?)
+            }
+        }
+        Ok(numbers)
+    }
+
+    fn point_list(&self) -> Result<Vec<Vector2D<f64>>, ReadError> {
+        let mut points = Vec::new();
+
+        let mut x = 0.0;
+        let mut y;
+        let mut update_x = true;
+        for value in self.number_list()?.into_iter() {
+            if update_x {
+                x = value;
+            } else {
+                y = value;
+                points.push(StaticVector([x, y]))
+            }
+
+            update_x = !update_x;
+        }
+
+        Ok(points)
+    }
+
+    fn transform(&self) -> Matrix3x3<f64> {
+        let mut position = self.value.as_ref();
+
+    }
+}
+
+#[derive(Debug)]
 struct Point {
     style: Style,
     position: Vector2D<f64>,
@@ -187,14 +280,14 @@ impl Point {
     fn from_bytes_start(bytes: BytesStart) -> Result<Self, ReadError> {
         let style = Style::from_attributes(bytes.attributes().clone())?;
 
-        let mut x: f64 = 0.0;
-        let mut y: f64 = 0.0;
+        let mut x = 0.0;
+        let mut y = 0.0;
 
         for attribute in bytes.attributes() {
-            let attribute = attribute?;
-            match attribute.key.local_name().into_inner() {
-                b"x" => x = f64::from_str(attribute.unescape_value()?.as_ref())?,
-                b"y" => y = f64::from_str(attribute.unescape_value()?.as_ref())?,
+            let attribute = Attribute::parse(attribute?)?;
+            match attribute.key {
+                b"x" => x = attribute.number()?,
+                b"y" => y = attribute.number()?,
                 _ => (),
             };
         }
@@ -217,18 +310,18 @@ impl Line {
     fn from_bytes_start(bytes: BytesStart) -> Result<Self, ReadError> {
         let style = Style::from_attributes(bytes.attributes().clone())?;
 
-        let mut x1: f64 = 0.0;
-        let mut y1: f64 = 0.0;
-        let mut x2: f64 = 0.0;
-        let mut y2: f64 = 0.0;
+        let mut x1 = 0.0;
+        let mut y1 = 0.0;
+        let mut x2 = 0.0;
+        let mut y2 = 0.0;
 
         for attribute in bytes.attributes() {
-            let attribute = attribute?;
-            match attribute.key.local_name().into_inner() {
-                b"x1" => x1 = f64::from_str(attribute.unescape_value()?.as_ref())?,
-                b"y1" => y1 = f64::from_str(attribute.unescape_value()?.as_ref())?,
-                b"x2" => x2 = f64::from_str(attribute.unescape_value()?.as_ref())?,
-                b"y2" => y2 = f64::from_str(attribute.unescape_value()?.as_ref())?,
+            let attribute = Attribute::parse(attribute?)?;
+            match attribute.key {
+                b"x1" => x1 = attribute.length()?,
+                b"y1" => y1 = attribute.length()?,
+                b"x2" => x2 = attribute.length()?,
+                b"y2" => y2 = attribute.length()?,
                 _ => (),
             };
         }
@@ -254,16 +347,9 @@ impl Polyline {
         let mut points = Vec::new();
 
         for attribute in bytes.attributes() {
-            let attribute = attribute?;
-            match attribute.key.local_name().into_inner() {
-                b"points" => {
-                    for point_str in attribute.unescape_value()?.split_whitespace() {
-                        let (x_str, y_str) = point_str.split_once(',').unwrap();
-                        let x = f64::from_str(x_str)?;
-                        let y = f64::from_str(y_str)?;
-                        points.push(StaticVector([x, y]))
-                    }
-                }
+            let attribute = Attribute::parse(attribute?)?;
+            match attribute.key {
+                b"points" => points = attribute.point_list()?,
                 _ => (),
             };
         }
@@ -277,24 +363,29 @@ struct Rect {
     style: Style,
     position: Vector2D<f64>,
     dimension: Vector2D<f64>,
+    corners: Vector2D<f64>,
 }
 
 impl Rect {
     fn from_bytes_start(bytes: BytesStart) -> Result<EmptyTag, ReadError> {
         let style = Style::from_attributes(bytes.attributes().clone())?;
 
-        let mut x: f64 = 0.0;
-        let mut y: f64 = 0.0;
-        let mut width: f64 = 0.0;
-        let mut height: f64 = 0.0;
+        let mut x = 0.0;
+        let mut y = 0.0;
+        let mut rx = 0.0;
+        let mut ry = 0.0;
+        let mut width = 0.0;
+        let mut height = 0.0;
 
         for attribute in bytes.attributes() {
-            let attribute = attribute?;
-            match attribute.key.local_name().into_inner() {
-                b"x" => x = f64::from_str(attribute.unescape_value()?.as_ref())?,
-                b"y" => y = f64::from_str(attribute.unescape_value()?.as_ref())?,
-                b"width" => width = f64::from_str(attribute.unescape_value()?.as_ref())?,
-                b"height" => height = f64::from_str(attribute.unescape_value()?.as_ref())?,
+            let attribute = Attribute::parse(attribute?)?;
+            match attribute.key {
+                b"x" => x = attribute.length()?,
+                b"y" => y = attribute.length()?,
+                b"rx" => rx = attribute.length()?,
+                b"ry" => ry = attribute.length()?,
+                b"width" => width = attribute.length()?,
+                b"height" => height = attribute.length()?,
                 _ => (),
             };
         }
@@ -310,6 +401,7 @@ impl Rect {
             style,
             position: StaticVector([x, y]),
             dimension: StaticVector([width, height]),
+            corners: StaticVector([rx, ry]),
         }))
     }
 }
@@ -327,16 +419,9 @@ impl Polygon {
         let mut points = Vec::new();
 
         for attribute in bytes.attributes() {
-            let attribute = attribute?;
-            match attribute.key.local_name().into_inner() {
-                b"points" => {
-                    for point_str in attribute.unescape_value()?.split_whitespace() {
-                        let (x_str, y_str) = point_str.split_once(',').unwrap();
-                        let x = f64::from_str(x_str)?;
-                        let y = f64::from_str(y_str)?;
-                        points.push(StaticVector([x, y]))
-                    }
-                }
+            let attribute = Attribute::parse(attribute?)?;
+            match attribute.key {
+                b"points" => points = attribute.point_list()?,
                 _ => (),
             };
         }
@@ -356,18 +441,18 @@ impl Ellipse {
     fn from_bytes_start(bytes: BytesStart) -> Result<Self, ReadError> {
         let style = Style::from_attributes(bytes.attributes().clone())?;
 
-        let mut cx: f64 = 0.0;
-        let mut cy: f64 = 0.0;
-        let mut rx: f64 = 0.0;
-        let mut ry: f64 = 0.0;
+        let mut cx = 0.0;
+        let mut cy = 0.0;
+        let mut rx = 0.0;
+        let mut ry = 0.0;
 
         for attribute in bytes.attributes() {
-            let attribute = attribute?;
-            match attribute.key.local_name().into_inner() {
-                b"cx" => cx = f64::from_str(attribute.unescape_value()?.as_ref())?,
-                b"cy" => cy = f64::from_str(attribute.unescape_value()?.as_ref())?,
-                b"rx" => rx = f64::from_str(attribute.unescape_value()?.as_ref())?,
-                b"ry" => ry = f64::from_str(attribute.unescape_value()?.as_ref())?,
+            let attribute = Attribute::parse(attribute?)?;
+            match attribute.key {
+                b"cx" => cx = attribute.length()?,
+                b"cy" => cy = attribute.length()?,
+                b"rx" => rx = attribute.length()?,
+                b"ry" => ry = attribute.length()?,
                 _ => (),
             };
         }
@@ -402,14 +487,14 @@ pub struct SVG {
 
 impl SVG {
     fn from_bytes_start(bytes: BytesStart) -> Result<Self, ReadError> {
-        let mut width: f64 = 300.0;
-        let mut height: f64 = 150.0;
+        let mut width = 300.0;
+        let mut height = 150.0;
 
         for attribute in bytes.attributes() {
-            let attribute = attribute?;
-            match attribute.key.local_name().into_inner() {
-                b"height" => height = pixels_to_dim(attribute.unescape_value()?.as_ref())?,
-                b"width" => width = pixels_to_dim(attribute.unescape_value()?.as_ref())?,
+            let attribute = Attribute::parse(attribute?)?;
+            match attribute.key {
+                b"height" => height = attribute.length()?,
+                b"width" => width = attribute.length()?,
                 _ => (),
             };
         }
@@ -427,33 +512,29 @@ struct Style {
     fill_color: Color,
     stroke_width: f64,
     miter_limit: f64,
+    transform: Matrix3x3<f64>,
 }
 
 impl Style {
-    fn from_attributes(attributes: Attributes) -> Result<Self, ReadError> {
-        let mut stroke_color: Color = color::NONE;
-        let mut fill_color: Color = color::NONE;
-        let mut stroke_width: f64 = 1.0;
-        let mut miter_limit: f64 = 4.0;
+    fn from_attributes(
+        attributes: quick_xml::events::attributes::Attributes,
+    ) -> Result<Self, ReadError> {
+        let mut stroke_color = color::NONE;
+        let mut fill_color = color::NONE;
+        let mut stroke_width = 1.0;
+        let mut miter_limit = 4.0;
+        let mut transform = Matrix3x3::identity();
 
         for attribute in attributes {
-            let attribute = attribute?;
-            match attribute.key.local_name().into_inner() {
-                b"fill" => fill_color = Color::from(attribute.unescape_value()?.as_ref()),
-                b"fill-opacity" => {
-                    fill_color.a = f32::from_str(attribute.unescape_value()?.as_ref())?
-                }
-                b"stroke" => stroke_color = Color::from(attribute.unescape_value()?.as_ref()),
-                b"stroke-opacity" => {
-                    stroke_color.a = f32::from_str(attribute.unescape_value()?.as_ref())?
-                }
-                b"stroke-width" => {
-                    stroke_width = f64::from_str(attribute.unescape_value()?.as_ref())?
-                }
-                b"stroke-miterlimit" => {
-                    miter_limit = f64::from_str(attribute.unescape_value()?.as_ref())?
-                }
-                b"transform" => unimplemented!(),
+            let attribute = Attribute::parse(attribute?)?;
+            match attribute.key {
+                b"fill" => fill_color = attribute.color(),
+                b"fill-opacity" => fill_color.a = attribute.number()?,
+                b"stroke" => stroke_color = attribute.color(),
+                b"stroke-opacity" => stroke_color.a = attribute.number()?,
+                b"stroke-width" => stroke_width = attribute.number()?,
+                b"stroke-miterlimit" => miter_limit = attribute.number()?,
+                b"transform" => transform = attribute.transform()?,
                 _ => (),
             };
         }
@@ -463,14 +544,9 @@ impl Style {
             fill_color,
             stroke_width,
             miter_limit,
+            transform,
         })
     }
-}
-
-fn pixels_to_dim(pixels: &str) -> Result<f64, ParseFloatError> {
-    let mut dim_str = pixels.trim();
-    dim_str = dim_str.strip_suffix("px").unwrap_or(dim_str);
-    f64::from_str(dim_str)
 }
 
 fn read_next_event(reader: &mut NsReader<BufReader<File>>) -> Result<Element, EventStatus> {

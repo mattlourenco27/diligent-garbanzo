@@ -2,10 +2,10 @@ use hex::FromHex;
 
 #[derive(Debug)]
 pub struct Color {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
+    pub r: f64,
+    pub g: f64,
+    pub b: f64,
+    pub a: f64,
 }
 
 pub const NONE: Color = Color {
@@ -37,16 +37,16 @@ impl From<&str> for Color {
 
         let hex = value.strip_prefix('#').unwrap_or(value);
 
-        const INV: f32 = 1.0 / core::u8::MAX as f32;
+        const INV: f64 = 1.0 / core::u8::MAX as f64;
         if hex.len() == 6 {
             let bytes = match <[u8; 3]>::from_hex(hex) {
                 Ok(bytes) => bytes,
                 Err(_) => return NONE,
             };
             return Color {
-                r: bytes[0] as f32 * INV,
-                g: bytes[1] as f32 * INV,
-                b: bytes[2] as f32 * INV,
+                r: bytes[0] as f64 * INV,
+                g: bytes[1] as f64 * INV,
+                b: bytes[2] as f64 * INV,
                 a: 1.0,
             };
         }
@@ -57,10 +57,10 @@ impl From<&str> for Color {
                 Err(_) => return NONE,
             };
             return Color {
-                r: bytes[0] as f32 * INV,
-                g: bytes[1] as f32 * INV,
-                b: bytes[2] as f32 * INV,
-                a: bytes[3] as f32 * INV,
+                r: bytes[0] as f64 * INV,
+                g: bytes[1] as f64 * INV,
+                b: bytes[2] as f64 * INV,
+                a: bytes[3] as f64 * INV,
             };
         }
 
