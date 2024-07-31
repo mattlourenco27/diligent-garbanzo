@@ -173,7 +173,7 @@ impl StartTag {
 
     fn from_start_tag_bytes(bytes: BytesStart) -> Result<Self, EventStatus> {
         match bytes.local_name().into_inner() {
-            b"g" => unimplemented!(),
+            b"g" => Ok(StartTag::Group(Group::from_bytes_start(bytes)?)),
             b"svg" => Ok(StartTag::SVG(SVG::from_bytes_start(bytes)?)),
             unrecognized => Err(EventStatus::UnrecognizedTag(String::from_utf8(
                 unrecognized.to_owned(),
@@ -562,6 +562,17 @@ struct Image {
 struct Group {
     style: Style,
     elements: Vec<Element>,
+}
+
+impl Group {
+    fn from_bytes_start(bytes: BytesStart) -> Result<Self, ReadError> {
+        let style = Style::from_attributes(bytes.attributes())?;
+
+        Ok(Self {
+            style,
+            elements: Vec::new(),
+        })
+    }
 }
 
 #[derive(Debug)]
