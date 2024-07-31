@@ -1,71 +1,4 @@
-use core::slice::Iter;
 use num_traits::{ConstZero, Float, Zero};
-
-pub trait Vector<T>:
-    Clone
-    + PartialEq
-    + Zero
-    + core::ops::Neg<Output = Self>
-    + core::ops::Add<T, Output = Self>
-    + core::ops::AddAssign<T>
-    + core::ops::Add<Self, Output = Self>
-    + core::ops::AddAssign<Self>
-    + core::ops::Sub<T, Output = Self>
-    + core::ops::SubAssign<T>
-    + core::ops::Sub<Self, Output = Self>
-    + core::ops::SubAssign<Self>
-    + core::ops::Mul<T, Output = Self>
-    + core::ops::MulAssign<T>
-{
-    fn iter(&self) -> Iter<T>;
-
-    fn get_norm2(&self) -> T
-    where
-        T: Zero + Copy + core::ops::Mul<T, Output = T>,
-    {
-        ops::dot(self, self)
-    }
-
-    fn get_norm(&self) -> T
-    where
-        T: Float,
-    {
-        self.get_norm2().sqrt()
-    }
-}
-
-pub mod ops {
-    use num_traits::{Float, Zero};
-
-    use super::Vector;
-
-    pub fn dot<T>(_lhs: &impl Vector<T>, _rhs: &impl Vector<T>) -> T
-    where
-        T: Zero + Copy + core::ops::Mul<T, Output = T>,
-    {
-        _lhs.iter()
-            .zip(_rhs.iter())
-            .fold(T::zero(), |acc, (&l, &r)| acc + l * r)
-    }
-
-    pub fn normalize<T: Float>(vec: &mut impl Vector<T>) -> Result<(), String> {
-        let norm = vec.get_norm();
-        if norm == T::zero() {
-            return Err(String::from("Caught division by Zero during normalization"));
-        }
-        *vec *= T::one() / norm;
-        Ok(())
-    }
-
-    pub fn unit<T, U>(mut vec: T) -> Result<T, String>
-    where
-        T: Vector<U>,
-        U: Float,
-    {
-        normalize(&mut vec)?;
-        Ok(vec)
-    }
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct StaticVector<T, const SIZE: usize>(pub [T; SIZE]);
@@ -76,6 +9,50 @@ pub type Vector3D<T> = StaticVector<T, 3>;
 impl<T, const SIZE: usize> StaticVector<T, SIZE> {
     pub fn len(&self) -> usize {
         SIZE
+    }
+
+    pub fn get_norm2(&self) -> T
+    where
+        T: Zero + Copy + core::ops::Mul<T, Output = T>,
+    {
+        self.dot(&self)
+    }
+
+    pub fn get_norm(&self) -> T
+    where
+        T: Float,
+    {
+        self.get_norm2().sqrt()
+    }
+
+    pub fn dot(&self, rhs: &Self) -> T
+    where
+        T: Zero + Copy + core::ops::Mul<T, Output = T>,
+    {
+        self.0
+            .iter()
+            .zip(rhs.0.iter())
+            .fold(T::zero(), |acc, (&l, &r)| acc + l * r)
+    }
+
+    pub fn normalize(&mut self) -> Result<(), String>
+    where
+        T: Float + core::ops::MulAssign,
+    {
+        let norm = self.get_norm();
+        if norm == T::zero() {
+            return Err(String::from("Caught division by Zero during normalization"));
+        }
+        *self *= T::one() / norm;
+        Ok(())
+    }
+
+    pub fn unit(mut self) -> Result<Self, String>
+    where
+        T: Float + core::ops::MulAssign,
+    {
+        self.normalize()?;
+        Ok(self)
     }
 }
 
@@ -92,24 +69,6 @@ impl<T> StaticVector<T, 3> {
     }
 }
 
-impl<T, const SIZE: usize> Vector<T> for StaticVector<T, SIZE>
-where
-    T: ConstZero
-        + Copy
-        + PartialEq
-        + core::ops::Neg<Output = T>
-        + core::ops::Add<T, Output = T>
-        + core::ops::AddAssign<T>
-        + core::ops::Sub<T, Output = T>
-        + core::ops::SubAssign<T>
-        + core::ops::Mul<T, Output = T>
-        + core::ops::MulAssign<T>,
-{
-    fn iter(&self) -> Iter<T> {
-        self.0.iter()
-    }
-}
-
 impl<T, const SIZE: usize> ConstZero for StaticVector<T, SIZE>
 where
     T: ConstZero + Copy + PartialEq,
@@ -119,18 +78,18 @@ where
 
 impl<T, const SIZE: usize> Zero for StaticVector<T, SIZE>
 where
-    T: ConstZero + Copy + PartialEq,
+    T: Copy + PartialEq + Zero,
 {
     fn zero() -> Self {
-        Self::ZERO
+        Self([T::zero(); SIZE])
     }
 
     fn set_zero(&mut self) {
-        *self = Self::ZERO
+        *self = Self::zero()
     }
 
     fn is_zero(&self) -> bool {
-        *self == Self::ZERO
+        *self == Self::zero()
     }
 }
 
@@ -287,17 +246,17 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{ops, StaticVector, Vector};
+    use super::StaticVector;
     use num_traits::{ConstZero, Float};
 
-    fn within_epsilon<T: Float>(
-        vec_expected: &impl Vector<T>,
-        vec_result: &impl Vector<T>,
+    fn within_epsilon<T: Float, const SIZE: usize>(
+        vec_expected: &StaticVector<T, SIZE>,
+        vec_result: &StaticVector<T, SIZE>,
         eps: T,
     ) -> bool {
         vec_expected
-            .iter()
-            .zip(vec_result.iter())
+            .0.iter()
+            .zip(vec_result.0.iter())
             .all(|(&expected, &result)| (expected - result).abs() < eps)
     }
 
@@ -461,7 +420,7 @@ mod tests {
     #[test]
     fn vector_normalize() {
         let mut vec = StaticVector([3.0, -4.0]);
-        ops::normalize(&mut vec).unwrap();
+        vec.normalize().unwrap();
         assert!(within_epsilon(
             &StaticVector([0.6, -0.8]),
             &vec,
@@ -473,13 +432,13 @@ mod tests {
     #[should_panic]
     fn vector_normalize_zero() {
         let mut vec: StaticVector<f64, 3> = StaticVector::ZERO;
-        ops::normalize(&mut vec).unwrap()
+        vec.normalize().unwrap()
     }
 
     #[test]
     fn vector_unit_vec() {
         let vec = StaticVector([3.0, -4.0]);
-        let unit_vec = ops::unit(vec).unwrap();
+        let unit_vec = vec.unit().unwrap();
         assert!(within_epsilon(
             &StaticVector([0.6, -0.8]),
             &unit_vec,
@@ -491,7 +450,7 @@ mod tests {
     fn vector_dot() {
         let vec1 = StaticVector([-1.0, -2.0, 3.0]);
         let vec2 = StaticVector([4.0, 0.0, -8.0]);
-        assert_eq!(-28.0, ops::dot(&vec1, &vec2));
+        assert_eq!(-28.0, vec1.dot(&vec2));
     }
 
     #[test]
