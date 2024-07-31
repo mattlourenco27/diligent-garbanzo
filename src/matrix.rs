@@ -152,8 +152,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::process::id;
-
     use crate::{matrix::Matrix3x3, vector::StaticVector};
 
     use super::StaticMatrix;

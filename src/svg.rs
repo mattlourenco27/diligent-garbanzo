@@ -3,14 +3,17 @@ use std::{
     string::FromUtf8Error,
 };
 
+use once_cell::sync;
 use quick_xml::{
     events::{BytesEnd, BytesStart, Event},
     NsReader,
 };
 
+use regex::Regex;
+
 use crate::{
     color::{self, Color},
-    matrix::Matrix3x3,
+    matrix::{Matrix3x3, StaticMatrix},
     texture::Texture,
     vector::{StaticVector, Vector2D},
 };
@@ -232,11 +235,13 @@ impl<'a> Attribute<'a> {
         Attribute::parse_number(self.value.as_ref())
     }
 
-    fn number_list(&self) -> Result<Vec<f64>, ReadError> {
+    fn parse_number_list(raw_str: &str) -> Result<Vec<f64>, ParseFloatError> {
+        static RE: sync::Lazy<Regex> =
+            sync::Lazy::new(|| Regex::new(r"[,\s]+").expect("Invalid Regex"));
+
         let mut numbers = Vec::new();
 
-        const VALID_DELIMITERS: [char; 2] = [' ', ','];
-        for float_str in self.value.split(VALID_DELIMITERS) {
+        for float_str in RE.split(raw_str) {
             if !float_str.is_empty() {
                 numbers.push(Attribute::parse_number(float_str)?)
             }
@@ -244,29 +249,109 @@ impl<'a> Attribute<'a> {
         Ok(numbers)
     }
 
+    fn number_list(&self) -> Result<Vec<f64>, ParseFloatError> {
+        Attribute::parse_number_list(self.value.as_ref())
+    }
+
     fn point_list(&self) -> Result<Vec<Vector2D<f64>>, ReadError> {
         let mut points = Vec::new();
 
         let mut x = 0.0;
         let mut y;
-        let mut update_x = true;
-        for value in self.number_list()?.into_iter() {
-            if update_x {
+        for (i, value) in self.number_list()?.into_iter().enumerate() {
+            if i % 2 == 0 {
                 x = value;
             } else {
                 y = value;
                 points.push(StaticVector([x, y]))
             }
-
-            update_x = !update_x;
         }
 
         Ok(points)
     }
 
-    fn transform(&self) -> Matrix3x3<f64> {
-        let mut position = self.value.as_ref();
+    // This implements the SVG transformation specification. All the SVG
+    // transformations are supported as documented in the link below:
+    // https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/transform
+    fn transform_list(&self) -> Result<Matrix3x3<f64>, ParseFloatError> {
+        const DEG_TO_RAD: f64 = core::f64::consts::PI / 180.0;
 
+        static RE: sync::Lazy<Regex> =
+            sync::Lazy::new(|| Regex::new(r"\)[,\s]*").expect("Invalid Regex"));
+
+        let mut final_transform = Matrix3x3::identity();
+
+        for transform_str in RE.split(self.value.as_ref()) {
+            let (transform_type, values) = match transform_str.split_once('(') {
+                None => continue,
+                Some(ret) => ret,
+            };
+
+            let numbers = Attribute::parse_number_list(values)?;
+
+            let transform = match transform_type {
+                "matrix" => {
+                    if numbers.len() != 6 {
+                        continue;
+                    }
+                    StaticMatrix([
+                        [numbers[0], numbers[2], numbers[4]],
+                        [numbers[1], numbers[3], numbers[5]],
+                        [0.0, 0.0, 1.0],
+                    ])
+                }
+                "translate" => {
+                    if numbers.is_empty() || numbers.len() > 2 {
+                        continue;
+                    }
+                    let x = numbers[0];
+                    let y = *numbers.get(1).unwrap_or(&0.0);
+                    StaticMatrix([[1.0, 0.0, x], [0.0, 1.0, y], [0.0, 0.0, 1.0]])
+                }
+                "scale" => {
+                    if numbers.is_empty() || numbers.len() > 2 {
+                        continue;
+                    }
+                    let x = numbers[0];
+                    let y = *numbers.get(1).unwrap_or(&x);
+                    StaticMatrix([[x, 0.0, 0.0], [0.0, y, 0.0], [0.0, 0.0, 1.0]])
+                }
+                "rotate" => {
+                    if numbers.len() != 1 && numbers.len() != 3 {
+                        continue;
+                    }
+                    let a = numbers[0] * DEG_TO_RAD;
+                    let x = *numbers.get(1).unwrap_or(&0.0);
+                    let y = *numbers.get(2).unwrap_or(&0.0);
+                    let cx = -x * f64::cos(a) + y * f64::sin(a) + x;
+                    let cy = -x * f64::sin(a) - y * f64::cos(a) + y;
+                    StaticMatrix([
+                        [f64::cos(a), -f64::sin(a), cx],
+                        [f64::sin(a), f64::cos(a), cy],
+                        [0.0, 0.0, 1.0],
+                    ])
+                }
+                "skewX" => {
+                    if numbers.len() != 1 {
+                        continue;
+                    }
+                    let a = numbers[0] * DEG_TO_RAD;
+                    StaticMatrix([[1.0, f64::tan(a), 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+                }
+                "skewY" => {
+                    if numbers.len() != 1 {
+                        continue;
+                    }
+                    let a = numbers[0] * DEG_TO_RAD;
+                    StaticMatrix([[1.0, 0.0, 0.0], [f64::tan(a), 1.0, 0.0], [0.0, 0.0, 1.0]])
+                }
+                _ => continue,
+            };
+
+            final_transform *= transform;
+        }
+
+        Ok(final_transform)
     }
 }
 
@@ -534,7 +619,7 @@ impl Style {
                 b"stroke-opacity" => stroke_color.a = attribute.number()?,
                 b"stroke-width" => stroke_width = attribute.number()?,
                 b"stroke-miterlimit" => miter_limit = attribute.number()?,
-                b"transform" => transform = attribute.transform()?,
+                b"transform" => transform = attribute.transform_list()?,
                 _ => (),
             };
         }
