@@ -113,14 +113,29 @@ pub enum EmptyTag {
 }
 
 impl EmptyTag {
-    fn from_empty_tag_bytes(bytes: BytesStart, parent_style: Style) -> Result<EmptyTag, EventStatus> {
+    fn from_empty_tag_bytes(
+        bytes: BytesStart,
+        parent_style: Style,
+    ) -> Result<EmptyTag, EventStatus> {
         match bytes.local_name().into_inner() {
-            b"point" => Ok(EmptyTag::Point(Point::from_bytes_start(bytes, parent_style)?)),
+            b"point" => Ok(EmptyTag::Point(Point::from_bytes_start(
+                bytes,
+                parent_style,
+            )?)),
             b"line" => Ok(EmptyTag::Line(Line::from_bytes_start(bytes, parent_style)?)),
-            b"polyline" => Ok(EmptyTag::Polyline(Polyline::from_bytes_start(bytes, parent_style)?)),
+            b"polyline" => Ok(EmptyTag::Polyline(Polyline::from_bytes_start(
+                bytes,
+                parent_style,
+            )?)),
             b"rect" => Ok(Rect::from_bytes_start(bytes, parent_style)?),
-            b"polygon" => Ok(EmptyTag::Polygon(Polygon::from_bytes_start(bytes, parent_style)?)),
-            b"ellipse" => Ok(EmptyTag::Ellipse(Ellipse::from_bytes_start(bytes, parent_style)?)),
+            b"polygon" => Ok(EmptyTag::Polygon(Polygon::from_bytes_start(
+                bytes,
+                parent_style,
+            )?)),
+            b"ellipse" => Ok(EmptyTag::Ellipse(Ellipse::from_bytes_start(
+                bytes,
+                parent_style,
+            )?)),
             b"image" => unimplemented!(),
             unrecognized => Err(EventStatus::UnrecognizedTag(String::from_utf8(
                 unrecognized.to_owned(),
@@ -702,7 +717,8 @@ fn read_next_event(
     let next_event = reader.read_event_into(&mut buf)?;
     match next_event {
         Event::Start(start_tag_bytes) => {
-            let (tag, style) = StartTag::from_start_tag_bytes(start_tag_bytes, (*parent_style).clone())?;
+            let (tag, style) =
+                StartTag::from_start_tag_bytes(start_tag_bytes, (*parent_style).clone())?;
 
             style_lifo.push(style);
 

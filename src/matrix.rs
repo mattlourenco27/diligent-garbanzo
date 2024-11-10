@@ -119,14 +119,18 @@ where
     }
 }
 
-impl<T, const ROWS: usize, const COLS: usize> core::ops::Index<usize> for StaticMatrix<T, ROWS, COLS> {
+impl<T, const ROWS: usize, const COLS: usize> core::ops::Index<usize>
+    for StaticMatrix<T, ROWS, COLS>
+{
     type Output = [T; COLS];
     fn index(&self, i: usize) -> &Self::Output {
         &self.0[i]
     }
 }
 
-impl<T, const ROWS: usize, const COLS: usize> core::ops::IndexMut<usize> for StaticMatrix<T, ROWS, COLS> {
+impl<T, const ROWS: usize, const COLS: usize> core::ops::IndexMut<usize>
+    for StaticMatrix<T, ROWS, COLS>
+{
     fn index_mut(&mut self, i: usize) -> &mut Self::Output {
         &mut self.0[i]
     }
@@ -168,7 +172,8 @@ where
     }
 }
 
-impl<T, const ROWS:usize, const SIZE: usize> core::ops::MulAssign<&StaticMatrix<T, SIZE, SIZE>> for StaticMatrix<T, ROWS, SIZE>
+impl<T, const ROWS: usize, const SIZE: usize> core::ops::MulAssign<&StaticMatrix<T, SIZE, SIZE>>
+    for StaticMatrix<T, ROWS, SIZE>
 where
     T: ConstZero + Copy + PartialEq + core::ops::Mul<Output = T>,
 {
@@ -183,7 +188,8 @@ where
     }
 }
 
-impl<T, const ROWS:usize, const SIZE: usize> core::ops::MulAssign<StaticMatrix<T, SIZE, SIZE>> for StaticMatrix<T, ROWS, SIZE>
+impl<T, const ROWS: usize, const SIZE: usize> core::ops::MulAssign<StaticMatrix<T, SIZE, SIZE>>
+    for StaticMatrix<T, ROWS, SIZE>
 where
     T: ConstZero + Copy + PartialEq + core::ops::Mul<Output = T>,
 {

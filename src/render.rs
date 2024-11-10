@@ -20,9 +20,8 @@ impl<'a> CanvasRenderer<'a> {
         object_mgr: &'a ObjectMgr,
         viewer: &'a Viewer,
     ) -> Result<Self, IntegerOrSdlError> {
-        let canvas = window.into_canvas().present_vsync().build()?;
         Ok(Self {
-            canvas,
+            canvas: window.into_canvas().present_vsync().build()?,
             object_mgr,
             viewer,
         })

@@ -10,7 +10,7 @@ pub struct Viewer {
 impl Viewer {
     pub fn new() -> Self {
         Self {
-            transform: Matrix3x3::IDENTITY3X3
+            transform: Matrix3x3::IDENTITY3X3,
         }
     }
 
