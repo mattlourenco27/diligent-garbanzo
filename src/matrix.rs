@@ -1,4 +1,4 @@
-use num_traits::{ConstZero, One, Zero};
+use num_traits::{ConstOne, ConstZero, One, Zero};
 
 use crate::vector::StaticVector;
 
@@ -76,7 +76,19 @@ impl<T, const SIZE: usize> StaticMatrix<T, SIZE, SIZE> {
     }
 }
 
-impl<T, const ROWS: usize, const COLS: usize> From<[[T; COLS]; ROWS]> for StaticMatrix<T, ROWS, COLS>
+impl<T> Matrix3x3<T>
+where
+    T: ConstZero + ConstOne,
+{
+    pub const IDENTITY3X3: Self = Self([
+        [T::ONE, T::ZERO, T::ZERO],
+        [T::ZERO, T::ONE, T::ZERO],
+        [T::ZERO, T::ZERO, T::ONE],
+    ]);
+}
+
+impl<T, const ROWS: usize, const COLS: usize> From<[[T; COLS]; ROWS]>
+    for StaticMatrix<T, ROWS, COLS>
 {
     fn from(value: [[T; COLS]; ROWS]) -> Self {
         Self(value)

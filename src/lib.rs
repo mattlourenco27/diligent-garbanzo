@@ -1,4 +1,3 @@
-pub mod color;
 pub mod matrix;
 pub mod objects;
 pub mod render;

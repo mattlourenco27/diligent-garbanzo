@@ -3,6 +3,7 @@ use std::{
     string::FromUtf8Error,
 };
 
+use hex::FromHex;
 use once_cell::sync;
 use quick_xml::{
     events::{BytesEnd, BytesStart, Event},
@@ -10,13 +11,9 @@ use quick_xml::{
 };
 
 use regex::Regex;
+use sdl2::pixels::Color;
 
-use crate::{
-    color::{self, Color},
-    matrix::{Matrix3x3, StaticMatrix},
-    texture::Texture,
-    vector::Vector2D,
-};
+use crate::{matrix::Matrix3x3, texture::Texture, vector::Vector2D};
 
 #[derive(Debug)]
 pub enum ReadError {
@@ -197,7 +194,41 @@ impl<'a> Attribute<'a> {
     }
 
     fn color(&self) -> Color {
-        Color::from(self.value.as_ref())
+        let value = self.value.as_ref();
+    
+        if value == "none" || value.len() == 0 {
+            return Style::COLOR_NONE;
+        }
+
+        let hex = value.strip_prefix('#').unwrap_or(value);
+
+        if hex.len() == 6 {
+            let bytes = match <[u8; 3]>::from_hex(hex) {
+                Ok(bytes) => bytes,
+                Err(_) => return Style::COLOR_NONE,
+            };
+            return Color {
+                r: bytes[0],
+                g: bytes[1],
+                b: bytes[2],
+                a: core::u8::MAX,
+            };
+        }
+
+        if hex.len() == 8 {
+            let bytes = match <[u8; 4]>::from_hex(hex) {
+                Ok(bytes) => bytes,
+                Err(_) => return Style::COLOR_NONE,
+            };
+            return Color {
+                r: bytes[0],
+                g: bytes[1],
+                b: bytes[2],
+                a: bytes[3],
+            };
+        }
+
+        Style::COLOR_NONE
     }
 
     fn length(&self) -> Result<f64, ReadError> {
@@ -614,22 +645,33 @@ pub struct Style {
 }
 
 impl Style {
+    const COLOR_NONE: Color = Color::RGBA(0, 0, 0, 0);
+    
+    pub const DEFAULT: Self = Self {
+        stroke_color: Self::COLOR_NONE,
+        fill_color: Self::COLOR_NONE,
+        stroke_width: 1.0,
+        miter_limit: 4.0,
+        transform: Matrix3x3::IDENTITY3X3,
+    };
+
     fn from_attributes(
         attributes: quick_xml::events::attributes::Attributes,
     ) -> Result<Self, ReadError> {
-        let mut stroke_color = color::NONE;
-        let mut fill_color = color::NONE;
-        let mut stroke_width = 1.0;
-        let mut miter_limit = 4.0;
-        let mut transform = Matrix3x3::identity();
+        let mut stroke_color = Style::DEFAULT.stroke_color;
+        let mut fill_color = Style::DEFAULT.fill_color;
+        let mut stroke_width = Style::DEFAULT.stroke_width;
+        let mut miter_limit = Style::DEFAULT.miter_limit;
+        let mut transform = Style::DEFAULT.transform;
 
+        const FLOAT_TO_8BIT: f64 = core::u8::MAX as f64;
         for attribute in attributes {
             let attribute = Attribute::parse(attribute?)?;
             match attribute.key {
                 b"fill" => fill_color = attribute.color(),
-                b"fill-opacity" => fill_color.a = attribute.number()?,
+                b"fill-opacity" => fill_color.a = (attribute.number()? * FLOAT_TO_8BIT) as u8,
                 b"stroke" => stroke_color = attribute.color(),
-                b"stroke-opacity" => stroke_color.a = attribute.number()?,
+                b"stroke-opacity" => stroke_color.a = (attribute.number()? * FLOAT_TO_8BIT) as u8,
                 b"stroke-width" => stroke_width = attribute.number()?,
                 b"stroke-miterlimit" => miter_limit = attribute.number()?,
                 b"transform" => transform = attribute.transform_list()?,

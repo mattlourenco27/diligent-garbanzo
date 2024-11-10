@@ -1,17 +1,21 @@
 use sdl2::{pixels::Color, render::WindowCanvas, video::Window, IntegerOrSdlError};
 
-use crate::objects::{svg::{Element, EmptyTag, Point, StartTag, SVG}, ObjectMgr};
+use crate::objects::{svg::{Element, EmptyTag, Point, StartTag, Style, SVG}, ObjectMgr};
 
 pub struct CanvasRenderer<'a> {
     canvas: WindowCanvas,
     object_mgr: &'a ObjectMgr,
+    style: Style,
 }
 
 impl<'a> CanvasRenderer<'a> {
     pub fn new(window: Window, object_mgr: &'a ObjectMgr) -> Result<Self, IntegerOrSdlError> {
-        let canvas = window.into_canvas().present_vsync().build()?;
+        let mut canvas = window.into_canvas().present_vsync().build()?;
+        let style = Style::DEFAULT;
 
-        Ok(Self { canvas , object_mgr})
+        canvas.set_draw_color(style.fill_color);
+
+        Ok(Self { canvas , object_mgr, style: Style::DEFAULT})
     }
 
     pub fn clear(&mut self) {
