@@ -113,14 +113,14 @@ pub enum EmptyTag {
 }
 
 impl EmptyTag {
-    fn from_empty_tag_bytes(bytes: BytesStart) -> Result<EmptyTag, EventStatus> {
+    fn from_empty_tag_bytes(bytes: BytesStart, parent_style: Style) -> Result<EmptyTag, EventStatus> {
         match bytes.local_name().into_inner() {
-            b"point" => Ok(EmptyTag::Point(Point::from_bytes_start(bytes)?)),
-            b"line" => Ok(EmptyTag::Line(Line::from_bytes_start(bytes)?)),
-            b"polyline" => Ok(EmptyTag::Polyline(Polyline::from_bytes_start(bytes)?)),
-            b"rect" => Ok(Rect::from_bytes_start(bytes)?),
-            b"polygon" => Ok(EmptyTag::Polygon(Polygon::from_bytes_start(bytes)?)),
-            b"ellipse" => Ok(EmptyTag::Ellipse(Ellipse::from_bytes_start(bytes)?)),
+            b"point" => Ok(EmptyTag::Point(Point::from_bytes_start(bytes, parent_style)?)),
+            b"line" => Ok(EmptyTag::Line(Line::from_bytes_start(bytes, parent_style)?)),
+            b"polyline" => Ok(EmptyTag::Polyline(Polyline::from_bytes_start(bytes, parent_style)?)),
+            b"rect" => Ok(Rect::from_bytes_start(bytes, parent_style)?),
+            b"polygon" => Ok(EmptyTag::Polygon(Polygon::from_bytes_start(bytes, parent_style)?)),
+            b"ellipse" => Ok(EmptyTag::Ellipse(Ellipse::from_bytes_start(bytes, parent_style)?)),
             b"image" => unimplemented!(),
             unrecognized => Err(EventStatus::UnrecognizedTag(String::from_utf8(
                 unrecognized.to_owned(),
@@ -168,10 +168,17 @@ impl StartTag {
         }
     }
 
-    fn from_start_tag_bytes(bytes: BytesStart) -> Result<Self, EventStatus> {
+    fn from_start_tag_bytes(
+        bytes: BytesStart,
+        parent_style: Style,
+    ) -> Result<(Self, Style), EventStatus> {
         match bytes.local_name().into_inner() {
-            b"g" => Ok(StartTag::Group(Group::from_bytes_start(bytes)?)),
-            b"svg" => Ok(StartTag::SVG(SVG::from_bytes_start(bytes)?)),
+            b"g" => {
+                let group = Group::from_bytes_start(bytes, parent_style)?;
+                let style = group.style.clone();
+                Ok((StartTag::Group(group), style))
+            }
+            b"svg" => Ok((StartTag::SVG(SVG::from_bytes_start(bytes)?), Style::DEFAULT)),
             unrecognized => Err(EventStatus::UnrecognizedTag(String::from_utf8(
                 unrecognized.to_owned(),
             )?)),
@@ -195,7 +202,7 @@ impl<'a> Attribute<'a> {
 
     fn color(&self) -> Color {
         let value = self.value.as_ref();
-    
+
         if value == "none" || value.len() == 0 {
             return Style::COLOR_NONE;
         }
@@ -395,8 +402,8 @@ pub struct Point {
 }
 
 impl Point {
-    fn from_bytes_start(bytes: BytesStart) -> Result<Self, ReadError> {
-        let style = Style::from_attributes(bytes.attributes().clone())?;
+    fn from_bytes_start(bytes: BytesStart, parent_style: Style) -> Result<Self, ReadError> {
+        let style = Style::from_attributes(bytes.attributes().clone(), parent_style)?;
 
         let mut x = 0.0;
         let mut y = 0.0;
@@ -425,8 +432,8 @@ pub struct Line {
 }
 
 impl Line {
-    fn from_bytes_start(bytes: BytesStart) -> Result<Self, ReadError> {
-        let style = Style::from_attributes(bytes.attributes().clone())?;
+    fn from_bytes_start(bytes: BytesStart, parent_style: Style) -> Result<Self, ReadError> {
+        let style = Style::from_attributes(bytes.attributes().clone(), parent_style)?;
 
         let mut x1 = 0.0;
         let mut y1 = 0.0;
@@ -459,8 +466,8 @@ pub struct Polyline {
 }
 
 impl Polyline {
-    fn from_bytes_start(bytes: BytesStart) -> Result<Self, ReadError> {
-        let style = Style::from_attributes(bytes.attributes().clone())?;
+    fn from_bytes_start(bytes: BytesStart, parent_style: Style) -> Result<Self, ReadError> {
+        let style = Style::from_attributes(bytes.attributes().clone(), parent_style)?;
 
         let mut points = Vec::new();
 
@@ -485,8 +492,8 @@ pub struct Rect {
 }
 
 impl Rect {
-    fn from_bytes_start(bytes: BytesStart) -> Result<EmptyTag, ReadError> {
-        let style = Style::from_attributes(bytes.attributes().clone())?;
+    fn from_bytes_start(bytes: BytesStart, parent_style: Style) -> Result<EmptyTag, ReadError> {
+        let style = Style::from_attributes(bytes.attributes().clone(), parent_style)?;
 
         let mut x = 0.0;
         let mut y = 0.0;
@@ -531,8 +538,8 @@ pub struct Polygon {
 }
 
 impl Polygon {
-    fn from_bytes_start(bytes: BytesStart) -> Result<Self, ReadError> {
-        let style = Style::from_attributes(bytes.attributes().clone())?;
+    fn from_bytes_start(bytes: BytesStart, parent_style: Style) -> Result<Self, ReadError> {
+        let style = Style::from_attributes(bytes.attributes().clone(), parent_style)?;
 
         let mut points = Vec::new();
 
@@ -556,8 +563,8 @@ pub struct Ellipse {
 }
 
 impl Ellipse {
-    fn from_bytes_start(bytes: BytesStart) -> Result<Self, ReadError> {
-        let style = Style::from_attributes(bytes.attributes().clone())?;
+    fn from_bytes_start(bytes: BytesStart, parent_style: Style) -> Result<Self, ReadError> {
+        let style = Style::from_attributes(bytes.attributes().clone(), parent_style)?;
 
         let mut cx = 0.0;
         let mut cy = 0.0;
@@ -598,8 +605,8 @@ pub struct Group {
 }
 
 impl Group {
-    fn from_bytes_start(bytes: BytesStart) -> Result<Self, ReadError> {
-        let style = Style::from_attributes(bytes.attributes())?;
+    fn from_bytes_start(bytes: BytesStart, parent_style: Style) -> Result<Self, ReadError> {
+        let style = Style::from_attributes(bytes.attributes(), parent_style)?;
 
         Ok(Self {
             style,
@@ -635,7 +642,7 @@ impl SVG {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Style {
     pub stroke_color: Color,
     pub fill_color: Color,
@@ -646,7 +653,7 @@ pub struct Style {
 
 impl Style {
     const COLOR_NONE: Color = Color::RGBA(0, 0, 0, 0);
-    
+
     pub const DEFAULT: Self = Self {
         stroke_color: Self::COLOR_NONE,
         fill_color: Self::COLOR_NONE,
@@ -657,52 +664,60 @@ impl Style {
 
     fn from_attributes(
         attributes: quick_xml::events::attributes::Attributes,
+        mut parent_style: Style,
     ) -> Result<Self, ReadError> {
-        let mut stroke_color = Style::DEFAULT.stroke_color;
-        let mut fill_color = Style::DEFAULT.fill_color;
-        let mut stroke_width = Style::DEFAULT.stroke_width;
-        let mut miter_limit = Style::DEFAULT.miter_limit;
-        let mut transform = Style::DEFAULT.transform;
-
         const FLOAT_TO_8BIT: f64 = core::u8::MAX as f64;
         for attribute in attributes {
             let attribute = Attribute::parse(attribute?)?;
             match attribute.key {
-                b"fill" => fill_color = attribute.color(),
-                b"fill-opacity" => fill_color.a = (attribute.number()? * FLOAT_TO_8BIT) as u8,
-                b"stroke" => stroke_color = attribute.color(),
-                b"stroke-opacity" => stroke_color.a = (attribute.number()? * FLOAT_TO_8BIT) as u8,
-                b"stroke-width" => stroke_width = attribute.number()?,
-                b"stroke-miterlimit" => miter_limit = attribute.number()?,
-                b"transform" => transform = attribute.transform_list()?,
+                b"fill" => parent_style.fill_color = attribute.color(),
+                b"fill-opacity" => {
+                    parent_style.fill_color.a = (attribute.number()? * FLOAT_TO_8BIT) as u8
+                }
+                b"stroke" => parent_style.stroke_color = attribute.color(),
+                b"stroke-opacity" => {
+                    parent_style.stroke_color.a = (attribute.number()? * FLOAT_TO_8BIT) as u8
+                }
+                b"stroke-width" => parent_style.stroke_width = attribute.number()?,
+                b"stroke-miterlimit" => parent_style.miter_limit = attribute.number()?,
+                b"transform" => parent_style.transform *= attribute.transform_list()?,
                 _ => (),
             };
         }
 
-        Ok(Self {
-            stroke_color,
-            fill_color,
-            stroke_width,
-            miter_limit,
-            transform,
-        })
+        Ok(parent_style)
     }
 }
 
-fn read_next_event(reader: &mut NsReader<BufReader<File>>) -> Result<Element, EventStatus> {
-    let mut buf = Vec::new();
+fn read_next_event(
+    reader: &mut NsReader<BufReader<File>>,
+    style_lifo: &mut Vec<Style>,
+) -> Result<Element, EventStatus> {
+    let parent_style = match style_lifo.last() {
+        None => &Style::DEFAULT,
+        Some(style) => style,
+    };
 
+    let mut buf = Vec::new();
     let next_event = reader.read_event_into(&mut buf)?;
     match next_event {
-        Event::Start(start_tag_bytes) => Ok(Element::StartTag(StartTag::from_start_tag_bytes(
-            start_tag_bytes,
-        )?)),
+        Event::Start(start_tag_bytes) => {
+            let (tag, style) = StartTag::from_start_tag_bytes(start_tag_bytes, (*parent_style).clone())?;
+
+            style_lifo.push(style);
+
+            Ok(Element::StartTag(tag))
+        }
         // Event::Text(event) => unimplemented!(),
         Event::End(end_tag_bytes) => {
+            if style_lifo.pop().is_none() {
+                return Err(EventStatus::Error(ReadError::EndTagBeforeStart));
+            }
             Ok(Element::EndTag(EndTag::from_end_tag_bytes(end_tag_bytes)?))
         }
         Event::Empty(empty_tag_bytes) => Ok(Element::EmptyTag(EmptyTag::from_empty_tag_bytes(
             empty_tag_bytes,
+            (*parent_style).clone(),
         )?)),
         Event::Eof => Err(EventStatus::Eof),
         _ => Err(EventStatus::SkippedTag),
@@ -753,10 +768,11 @@ fn handle_next_element(
 pub fn read_from_file(path: &Path) -> Result<SVG, ReadError> {
     let mut reader = NsReader::from_file(path)?;
 
+    let mut style_lifo = Vec::new();
     let mut tag_lifo = Vec::new();
 
     loop {
-        match read_next_event(&mut reader) {
+        match read_next_event(&mut reader, &mut style_lifo) {
             Ok(element) => match handle_next_element(&mut tag_lifo, element)? {
                 Some(svg) => return Ok(svg),
                 None => (),

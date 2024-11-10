@@ -1,21 +1,16 @@
 use sdl2::{pixels::Color, render::WindowCanvas, video::Window, IntegerOrSdlError};
 
-use crate::objects::{svg::{Element, EmptyTag, Point, StartTag, Style, SVG}, ObjectMgr};
+use crate::objects::{svg::{Element, EmptyTag, Point, StartTag, SVG}, ObjectMgr};
 
 pub struct CanvasRenderer<'a> {
     canvas: WindowCanvas,
     object_mgr: &'a ObjectMgr,
-    style: Style,
 }
 
 impl<'a> CanvasRenderer<'a> {
     pub fn new(window: Window, object_mgr: &'a ObjectMgr) -> Result<Self, IntegerOrSdlError> {
-        let mut canvas = window.into_canvas().present_vsync().build()?;
-        let style = Style::DEFAULT;
-
-        canvas.set_draw_color(style.fill_color);
-
-        Ok(Self { canvas , object_mgr, style: Style::DEFAULT})
+        let canvas = window.into_canvas().present_vsync().build()?;
+        Ok(Self { canvas , object_mgr})
     }
 
     pub fn clear(&mut self) {
@@ -34,7 +29,6 @@ impl<'a> CanvasRenderer<'a> {
     }
 
     fn render_svg(&mut self, svg_object: &SVG) {
-        self.canvas.set_draw_color(Color::RGB(50, 50, 50));
         for element in svg_object.elements.iter() {
             self.render_element(element);
         }
@@ -72,6 +66,7 @@ impl<'a> CanvasRenderer<'a> {
     }
 
     fn render_point(&mut self, point: &Point) {
+        self.canvas.set_draw_color(point.style.fill_color);
         self.canvas
             .draw_point(sdl2::rect::Point::new(
                 (point.position[0] * 800.0) as i32,
