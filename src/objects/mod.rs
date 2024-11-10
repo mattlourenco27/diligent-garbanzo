@@ -1,17 +1,20 @@
 use svg::SVG;
 
-use crate::vector::StaticVector;
+use crate::vector::Vector3D;
 
 pub mod svg;
 
 pub struct Object {
-    pub position: StaticVector<f64, 3>,
+    pub position: Vector3D<f64>,
     pub svg_inst: SVG,
 }
 
 impl From<SVG> for Object {
     fn from(value: SVG) -> Self {
-        Self {position: [0.0, 0.0, 0.0].into(), svg_inst: value}
+        Self {
+            position: [0.0, 0.0, 0.0].into(),
+            svg_inst: value,
+        }
     }
 }
 

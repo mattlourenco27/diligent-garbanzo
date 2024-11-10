@@ -1,16 +1,31 @@
 use sdl2::{pixels::Color, render::WindowCanvas, video::Window, IntegerOrSdlError};
 
-use crate::objects::{svg::{Element, EmptyTag, Point, StartTag, SVG}, ObjectMgr};
+use crate::{
+    objects::{
+        svg::{Element, EmptyTag, Point, StartTag, SVG},
+        ObjectMgr,
+    },
+    viewer::Viewer,
+};
 
 pub struct CanvasRenderer<'a> {
     canvas: WindowCanvas,
     object_mgr: &'a ObjectMgr,
+    viewer: &'a Viewer,
 }
 
 impl<'a> CanvasRenderer<'a> {
-    pub fn new(window: Window, object_mgr: &'a ObjectMgr) -> Result<Self, IntegerOrSdlError> {
+    pub fn new(
+        window: Window,
+        object_mgr: &'a ObjectMgr,
+        viewer: &'a Viewer,
+    ) -> Result<Self, IntegerOrSdlError> {
         let canvas = window.into_canvas().present_vsync().build()?;
-        Ok(Self { canvas , object_mgr})
+        Ok(Self {
+            canvas,
+            object_mgr,
+            viewer,
+        })
     }
 
     pub fn clear(&mut self) {
@@ -67,10 +82,12 @@ impl<'a> CanvasRenderer<'a> {
 
     fn render_point(&mut self, point: &Point) {
         self.canvas.set_draw_color(point.style.fill_color);
+
+        let draw_position = self.viewer.transform_position(&point.position);
         self.canvas
             .draw_point(sdl2::rect::Point::new(
-                (point.position[0] * 800.0) as i32,
-                (point.position[1] * 600.0) as i32,
+                draw_position[0] as i32,
+                draw_position[1] as i32,
             ))
             .unwrap();
     }

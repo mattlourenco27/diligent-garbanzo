@@ -3,6 +3,7 @@ use std::{env, path::PathBuf};
 
 use drawsvg::objects::ObjectMgr;
 use drawsvg::render::CanvasRenderer;
+use drawsvg::viewer::Viewer;
 use drawsvg::{objects::svg, sdl_wrapper::SDLContext};
 use sdl2::event::Event;
 
@@ -59,7 +60,11 @@ fn main() {
         }
     };
 
-    let mut renderer = match CanvasRenderer::new(window, &object_mgr) {
+    let mut viewer = Viewer::new();
+    viewer.zoom_to(&[400.0, 400.0].into());
+    viewer.move_to(&[0.5, 0.5].into());
+
+    let mut renderer = match CanvasRenderer::new(window, &object_mgr, &viewer) {
         Ok(renderer) => renderer,
         Err(err) => {
             println!("Error while building a renderer: {}", err);

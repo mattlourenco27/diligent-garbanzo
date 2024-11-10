@@ -119,6 +119,19 @@ where
     }
 }
 
+impl<T, const ROWS: usize, const COLS: usize> core::ops::Index<usize> for StaticMatrix<T, ROWS, COLS> {
+    type Output = [T; COLS];
+    fn index(&self, i: usize) -> &Self::Output {
+        &self.0[i]
+    }
+}
+
+impl<T, const ROWS: usize, const COLS: usize> core::ops::IndexMut<usize> for StaticMatrix<T, ROWS, COLS> {
+    fn index_mut(&mut self, i: usize) -> &mut Self::Output {
+        &mut self.0[i]
+    }
+}
+
 impl<T, const ROWS: usize, const COLS: usize> core::ops::Add for StaticMatrix<T, ROWS, COLS>
 where
     T: Copy + core::ops::Add<T, Output = T>,
@@ -155,11 +168,11 @@ where
     }
 }
 
-impl<T, const SIZE: usize> core::ops::MulAssign for StaticMatrix<T, SIZE, SIZE>
+impl<T, const ROWS:usize, const SIZE: usize> core::ops::MulAssign<&StaticMatrix<T, SIZE, SIZE>> for StaticMatrix<T, ROWS, SIZE>
 where
     T: ConstZero + Copy + PartialEq + core::ops::Mul<Output = T>,
 {
-    fn mul_assign(&mut self, rhs: Self) {
+    fn mul_assign(&mut self, rhs: &StaticMatrix<T, SIZE, SIZE>) {
         let clone = self.clone();
 
         for (i, row) in self.0.iter_mut().enumerate() {
@@ -167,6 +180,15 @@ where
                 *item = clone.get_row(i).unwrap().dot(&rhs.get_col(j).unwrap());
             }
         }
+    }
+}
+
+impl<T, const ROWS:usize, const SIZE: usize> core::ops::MulAssign<StaticMatrix<T, SIZE, SIZE>> for StaticMatrix<T, ROWS, SIZE>
+where
+    T: ConstZero + Copy + PartialEq + core::ops::Mul<Output = T>,
+{
+    fn mul_assign(&mut self, rhs: StaticMatrix<T, SIZE, SIZE>) {
+        self.mul_assign(&rhs);
     }
 }
 

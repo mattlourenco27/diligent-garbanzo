@@ -327,7 +327,7 @@ impl<'a> Attribute<'a> {
 
             let numbers = Attribute::parse_number_list(values)?;
 
-            let transform = match transform_type {
+            let transform: Matrix3x3<f64> = match transform_type {
                 "matrix" => {
                     if numbers.len() != 6 {
                         continue;
