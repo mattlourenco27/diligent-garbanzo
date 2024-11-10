@@ -98,14 +98,14 @@ impl std::fmt::Display for EventStatus {
 }
 
 #[derive(Debug)]
-enum Element {
+pub enum Element {
     EmptyTag(EmptyTag),
     EndTag(EndTag),
     StartTag(StartTag),
 }
 
 #[derive(Debug)]
-enum EmptyTag {
+pub enum EmptyTag {
     Ellipse(Ellipse),
     Image(Image),
     Line(Line),
@@ -133,7 +133,7 @@ impl EmptyTag {
 }
 
 #[derive(Debug, PartialEq)]
-enum EndTag {
+pub enum EndTag {
     Group,
     SVG,
 }
@@ -151,7 +151,7 @@ impl EndTag {
 }
 
 #[derive(Debug)]
-enum StartTag {
+pub enum StartTag {
     Group(Group),
     SVG(SVG),
 }
@@ -356,9 +356,9 @@ impl<'a> Attribute<'a> {
 }
 
 #[derive(Debug)]
-struct Point {
-    style: Style,
-    position: Vector2D<f64>,
+pub struct Point {
+    pub style: Style,
+    pub position: Vector2D<f64>,
 }
 
 impl Point {
@@ -385,10 +385,10 @@ impl Point {
 }
 
 #[derive(Debug)]
-struct Line {
-    style: Style,
-    from: Vector2D<f64>,
-    to: Vector2D<f64>,
+pub struct Line {
+    pub style: Style,
+    pub from: Vector2D<f64>,
+    pub to: Vector2D<f64>,
 }
 
 impl Line {
@@ -420,9 +420,9 @@ impl Line {
 }
 
 #[derive(Debug)]
-struct Polyline {
-    style: Style,
-    points: Vec<Vector2D<f64>>,
+pub struct Polyline {
+    pub style: Style,
+    pub points: Vec<Vector2D<f64>>,
 }
 
 impl Polyline {
@@ -444,11 +444,11 @@ impl Polyline {
 }
 
 #[derive(Debug)]
-struct Rect {
-    style: Style,
-    position: Vector2D<f64>,
-    dimension: Vector2D<f64>,
-    corners: Vector2D<f64>,
+pub struct Rect {
+    pub style: Style,
+    pub position: Vector2D<f64>,
+    pub dimension: Vector2D<f64>,
+    pub corners: Vector2D<f64>,
 }
 
 impl Rect {
@@ -492,9 +492,9 @@ impl Rect {
 }
 
 #[derive(Debug)]
-struct Polygon {
-    style: Style,
-    points: Vec<Vector2D<f64>>,
+pub struct Polygon {
+    pub style: Style,
+    pub points: Vec<Vector2D<f64>>,
 }
 
 impl Polygon {
@@ -516,10 +516,10 @@ impl Polygon {
 }
 
 #[derive(Debug)]
-struct Ellipse {
-    style: Style,
-    center: Vector2D<f64>,
-    radius: Vector2D<f64>,
+pub struct Ellipse {
+    pub style: Style,
+    pub center: Vector2D<f64>,
+    pub radius: Vector2D<f64>,
 }
 
 impl Ellipse {
@@ -551,17 +551,17 @@ impl Ellipse {
 }
 
 #[derive(Debug)]
-struct Image {
-    style: Style,
-    position: Vector2D<f64>,
-    dimension: Vector2D<f64>,
-    texture: Texture,
+pub struct Image {
+    pub style: Style,
+    pub position: Vector2D<f64>,
+    pub dimension: Vector2D<f64>,
+    pub texture: Texture,
 }
 
 #[derive(Debug)]
-struct Group {
-    style: Style,
-    elements: Vec<Element>,
+pub struct Group {
+    pub style: Style,
+    pub elements: Vec<Element>,
 }
 
 impl Group {
@@ -577,8 +577,8 @@ impl Group {
 
 #[derive(Debug)]
 pub struct SVG {
-    dimension: Vector2D<f64>,
-    elements: Vec<Element>,
+    pub dimension: Vector2D<f64>,
+    pub elements: Vec<Element>,
 }
 
 impl SVG {
@@ -603,12 +603,12 @@ impl SVG {
 }
 
 #[derive(Debug)]
-struct Style {
-    stroke_color: Color,
-    fill_color: Color,
-    stroke_width: f64,
-    miter_limit: f64,
-    transform: Matrix3x3<f64>,
+pub struct Style {
+    pub stroke_color: Color,
+    pub fill_color: Color,
+    pub stroke_width: f64,
+    pub miter_limit: f64,
+    pub transform: Matrix3x3<f64>,
 }
 
 impl Style {
