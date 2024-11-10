@@ -2,10 +2,26 @@ use drawsvg::sdl_wrapper::SDLContext;
 use sdl2::{event::Event, pixels::Color, rect::{Point, Rect}};
 
 fn main() {
-    let mut sdl_context = match SDLContext::new(800, 600) {
+    let mut sdl_context = match SDLContext::new() {
         Ok(sdl_context) => sdl_context,
         Err(string) => {
             println!("Error while setting up sdl context: {}", string);
+            return;
+        }
+    };
+
+    let window = match sdl_context.build_new_window("Example Window", 800, 600) {
+        Ok(window) => window,
+        Err(err) => {
+            println!("Error while building a new window: {}", err);
+            return;
+        }
+    };
+
+    let mut canvas = match window.into_canvas().present_vsync().build(){
+        Ok(canvas) => canvas,
+        Err(err) => {
+            println!("Error while building a canvas: {}", err);
             return;
         }
     };
@@ -21,7 +37,6 @@ fn main() {
             }
         }
 
-        let canvas = &mut sdl_context.canvas;
         canvas.set_draw_color(Color::RGB(0, 0, 0));
         canvas.clear();
 

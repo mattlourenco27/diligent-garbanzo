@@ -1,33 +1,31 @@
-use sdl2::{render::Canvas, video::Window, EventPump, Sdl};
+use sdl2::{
+    video::{Window, WindowBuildError},
+    EventPump, Sdl, VideoSubsystem,
+};
 
 pub struct SDLContext {
     pub sdl: Sdl,
-    pub canvas: Canvas<Window>,
+    pub video_subsystem: VideoSubsystem,
     pub event_pump: EventPump,
 }
 
 impl SDLContext {
-    pub fn new(width: u32, height: u32) -> Result<Self, String> {
+    pub fn new() -> Result<Self, String> {
         let sdl = sdl2::init()?;
 
-        let video_subsystem = sdl.video()?;
-
-        let window = match video_subsystem.window("My window", width, height).build() {
-            Ok(window) => window,
-            Err(error) => return Err(format!("{error:?}")),
-        };
-
-        let canvas = match window.into_canvas().present_vsync().build() {
-            Ok(canvas) => canvas,
-            Err(error) => return Err(format!("{error:?}")),
-        };
-
-        let event_pump = sdl.event_pump()?;
-
         Ok(SDLContext {
+            video_subsystem: sdl.video()?,
+            event_pump: sdl.event_pump()?,
             sdl,
-            canvas,
-            event_pump,
         })
+    }
+
+    pub fn build_new_window(
+        &self,
+        title: &str,
+        width: u32,
+        height: u32,
+    ) -> Result<Window, WindowBuildError> {
+        self.video_subsystem.window(title, width, height).build()
     }
 }

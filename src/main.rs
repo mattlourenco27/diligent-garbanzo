@@ -3,7 +3,7 @@ use std::{env, path::PathBuf};
 
 use drawsvg::render::CanvasRenderer;
 use drawsvg::{sdl_wrapper::SDLContext, svg};
-use sdl2::{event::Event, pixels::Color};
+use sdl2::event::Event;
 
 struct Args {
     svg_path: PathBuf,
@@ -39,10 +39,26 @@ fn main() {
         Ok(svg) => svg,
     };
 
-    let mut sdl_context = match SDLContext::new(800, 600) {
+    let mut sdl_context = match SDLContext::new() {
         Ok(sdl_context) => sdl_context,
         Err(string) => {
             println!("Error while setting up sdl context: {}", string);
+            return;
+        }
+    };
+
+    let window = match sdl_context.build_new_window("My Window", 800, 600) {
+        Ok(window) => window,
+        Err(err) => {
+            println!("Error while building a new window: {}", err);
+            return;
+        }
+    };
+
+    let mut renderer = match CanvasRenderer::new(window) {
+        Ok(renderer) => renderer,
+        Err(err) => {
+            println!("Error while building a renderer: {}", err);
             return;
         }
     };
@@ -57,18 +73,9 @@ fn main() {
             }
         }
 
-        let canvas = &mut sdl_context.canvas;
-        canvas.set_draw_color(Color::RGB(0, 0, 0));
-        canvas.clear();
-
-        {
-            canvas.set_draw_color(Color::RGB(50, 50, 50));
-
-            let mut renderer = CanvasRenderer::new(canvas);
-            renderer.render_svg(&svg_object);
-        }
-
-        canvas.present();
+        renderer.clear();
+        renderer.render_svg(&svg_object);
+        renderer.present();
 
         frames += 1;
     }
