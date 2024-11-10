@@ -2,7 +2,7 @@ use std::env;
 use std::ffi::OsString;
 use std::path::Path;
 
-use drawsvg::svg;
+use drawsvg::objects::svg;
 
 const USAGE: &'static str = "Usage: read_svg <svg file>";
 

@@ -1,6 +1,6 @@
 use sdl2::{pixels::Color, render::WindowCanvas, video::Window, IntegerOrSdlError};
 
-use crate::svg::{Element, EmptyTag, Point, StartTag, SVG};
+use crate::objects::svg::{Element, EmptyTag, Point, StartTag, SVG};
 
 pub struct CanvasRenderer {
     canvas: WindowCanvas,

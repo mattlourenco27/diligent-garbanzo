@@ -2,7 +2,7 @@ use std::ffi::OsString;
 use std::{env, path::PathBuf};
 
 use drawsvg::render::CanvasRenderer;
-use drawsvg::{sdl_wrapper::SDLContext, svg};
+use drawsvg::{sdl_wrapper::SDLContext, objects::svg};
 use sdl2::event::Event;
 
 struct Args {
