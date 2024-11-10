@@ -15,7 +15,7 @@ use crate::{
     color::{self, Color},
     matrix::{Matrix3x3, StaticMatrix},
     texture::Texture,
-    vector::{StaticVector, Vector2D},
+    vector::Vector2D,
 };
 
 #[derive(Debug)]
@@ -263,7 +263,7 @@ impl<'a> Attribute<'a> {
                 x = value;
             } else {
                 y = value;
-                points.push(StaticVector([x, y]))
+                points.push([x, y].into())
             }
         }
 
@@ -294,11 +294,12 @@ impl<'a> Attribute<'a> {
                     if numbers.len() != 6 {
                         continue;
                     }
-                    StaticMatrix([
+                    [
                         [numbers[0], numbers[2], numbers[4]],
                         [numbers[1], numbers[3], numbers[5]],
                         [0.0, 0.0, 1.0],
-                    ])
+                    ]
+                    .into()
                 }
                 "translate" => {
                     if numbers.is_empty() || numbers.len() > 2 {
@@ -306,7 +307,7 @@ impl<'a> Attribute<'a> {
                     }
                     let x = numbers[0];
                     let y = *numbers.get(1).unwrap_or(&0.0);
-                    StaticMatrix([[1.0, 0.0, x], [0.0, 1.0, y], [0.0, 0.0, 1.0]])
+                    [[1.0, 0.0, x], [0.0, 1.0, y], [0.0, 0.0, 1.0]].into()
                 }
                 "scale" => {
                     if numbers.is_empty() || numbers.len() > 2 {
@@ -314,7 +315,7 @@ impl<'a> Attribute<'a> {
                     }
                     let x = numbers[0];
                     let y = *numbers.get(1).unwrap_or(&x);
-                    StaticMatrix([[x, 0.0, 0.0], [0.0, y, 0.0], [0.0, 0.0, 1.0]])
+                    [[x, 0.0, 0.0], [0.0, y, 0.0], [0.0, 0.0, 1.0]].into()
                 }
                 "rotate" => {
                     if numbers.len() != 1 && numbers.len() != 3 {
@@ -325,25 +326,26 @@ impl<'a> Attribute<'a> {
                     let y = *numbers.get(2).unwrap_or(&0.0);
                     let cx = -x * f64::cos(a) + y * f64::sin(a) + x;
                     let cy = -x * f64::sin(a) - y * f64::cos(a) + y;
-                    StaticMatrix([
+                    [
                         [f64::cos(a), -f64::sin(a), cx],
                         [f64::sin(a), f64::cos(a), cy],
                         [0.0, 0.0, 1.0],
-                    ])
+                    ]
+                    .into()
                 }
                 "skewX" => {
                     if numbers.len() != 1 {
                         continue;
                     }
                     let a = numbers[0] * DEG_TO_RAD;
-                    StaticMatrix([[1.0, f64::tan(a), 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+                    [[1.0, f64::tan(a), 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]].into()
                 }
                 "skewY" => {
                     if numbers.len() != 1 {
                         continue;
                     }
                     let a = numbers[0] * DEG_TO_RAD;
-                    StaticMatrix([[1.0, 0.0, 0.0], [f64::tan(a), 1.0, 0.0], [0.0, 0.0, 1.0]])
+                    [[1.0, 0.0, 0.0], [f64::tan(a), 1.0, 0.0], [0.0, 0.0, 1.0]].into()
                 }
                 _ => continue,
             };
@@ -379,7 +381,7 @@ impl Point {
 
         Ok(Self {
             style,
-            position: StaticVector([x, y]),
+            position: [x, y].into(),
         })
     }
 }
@@ -413,8 +415,8 @@ impl Line {
 
         Ok(Self {
             style,
-            from: StaticVector([x1, y1]),
-            to: StaticVector([x2, y2]),
+            from: [x1, y1].into(),
+            to: [x2, y2].into(),
         })
     }
 }
@@ -478,15 +480,15 @@ impl Rect {
         if width == 0.0 && height == 0.0 {
             return Ok(EmptyTag::Point(Point {
                 style,
-                position: StaticVector([x, y]),
+                position: [x, y].into(),
             }));
         }
 
         Ok(EmptyTag::Rect(Rect {
             style,
-            position: StaticVector([x, y]),
-            dimension: StaticVector([width, height]),
-            corners: StaticVector([rx, ry]),
+            position: [x, y].into(),
+            dimension: [width, height].into(),
+            corners: [rx, ry].into(),
         }))
     }
 }
@@ -544,8 +546,8 @@ impl Ellipse {
 
         Ok(Self {
             style,
-            center: StaticVector([cx, cy]),
-            radius: StaticVector([rx, ry]),
+            center: [cx, cy].into(),
+            radius: [rx, ry].into(),
         })
     }
 }
@@ -596,7 +598,7 @@ impl SVG {
         }
 
         Ok(Self {
-            dimension: StaticVector([width, height]),
+            dimension: [width, height].into(),
             elements: Vec::new(),
         })
     }

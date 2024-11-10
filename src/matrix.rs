@@ -3,7 +3,7 @@ use num_traits::{ConstZero, One, Zero};
 use crate::vector::StaticVector;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct StaticMatrix<T, const ROWS: usize, const COLS: usize>(pub [[T; COLS]; ROWS]);
+pub struct StaticMatrix<T, const ROWS: usize, const COLS: usize>([[T; COLS]; ROWS]);
 
 pub type Matrix3x3<T> = StaticMatrix<T, 3, 3>;
 
@@ -24,7 +24,7 @@ impl<T, const ROWS: usize, const COLS: usize> StaticMatrix<T, ROWS, COLS> {
     where
         T: Copy,
     {
-        Some(StaticVector(*self.0.get(row)?))
+        Some((*self.0.get(row)?).into())
     }
 
     pub fn get_col(&self, col: usize) -> Option<StaticVector<T, ROWS>>
@@ -40,7 +40,7 @@ impl<T, const ROWS: usize, const COLS: usize> StaticMatrix<T, ROWS, COLS> {
             arr[i] = row[col];
         }
 
-        Some(StaticVector(arr))
+        Some(arr.into())
     }
 
     pub fn transpose(self) -> StaticMatrix<T, COLS, ROWS>
@@ -73,6 +73,13 @@ impl<T, const SIZE: usize> StaticMatrix<T, SIZE, SIZE> {
         }
 
         ret
+    }
+}
+
+impl<T, const ROWS: usize, const COLS: usize> From<[[T; COLS]; ROWS]> for StaticMatrix<T, ROWS, COLS>
+{
+    fn from(value: [[T; COLS]; ROWS]) -> Self {
+        Self(value)
     }
 }
 
@@ -138,7 +145,8 @@ where
 
 impl<T, const SIZE: usize> core::ops::MulAssign for StaticMatrix<T, SIZE, SIZE>
 where
-    T: ConstZero + Copy + PartialEq + core::ops::Mul<Output = T>{
+    T: ConstZero + Copy + PartialEq + core::ops::Mul<Output = T>,
+{
     fn mul_assign(&mut self, rhs: Self) {
         let clone = self.clone();
 
@@ -152,7 +160,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{matrix::Matrix3x3, vector::StaticVector};
+    use crate::matrix::Matrix3x3;
 
     use super::StaticMatrix;
 
@@ -193,13 +201,13 @@ mod tests {
     #[test]
     fn matrix_get_row() {
         let mat = StaticMatrix([[1, 2], [3, 4]]);
-        assert_eq!(mat.get_row(0), Some(StaticVector([1, 2])));
+        assert_eq!(mat.get_row(0), Some([1, 2].into()));
     }
 
     #[test]
     fn matrix_get_col() {
         let mat = StaticMatrix([[1, 2], [3, 4]]);
-        assert_eq!(mat.get_col(1), Some(StaticVector([2, 4])));
+        assert_eq!(mat.get_col(1), Some([2, 4].into()));
     }
 
     #[test]

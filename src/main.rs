@@ -1,8 +1,9 @@
 use std::ffi::OsString;
 use std::{env, path::PathBuf};
 
+use drawsvg::objects::ObjectMgr;
 use drawsvg::render::CanvasRenderer;
-use drawsvg::{sdl_wrapper::SDLContext, objects::svg};
+use drawsvg::{objects::svg, sdl_wrapper::SDLContext};
 use sdl2::event::Event;
 
 struct Args {
@@ -39,6 +40,9 @@ fn main() {
         Ok(svg) => svg,
     };
 
+    let mut object_mgr = ObjectMgr::new();
+    object_mgr.add_object(svg_object.into());
+
     let mut sdl_context = match SDLContext::new() {
         Ok(sdl_context) => sdl_context,
         Err(string) => {
@@ -55,7 +59,7 @@ fn main() {
         }
     };
 
-    let mut renderer = match CanvasRenderer::new(window) {
+    let mut renderer = match CanvasRenderer::new(window, &object_mgr) {
         Ok(renderer) => renderer,
         Err(err) => {
             println!("Error while building a renderer: {}", err);
@@ -74,7 +78,7 @@ fn main() {
         }
 
         renderer.clear();
-        renderer.render_svg(&svg_object);
+        renderer.render_objects();
         renderer.present();
 
         frames += 1;

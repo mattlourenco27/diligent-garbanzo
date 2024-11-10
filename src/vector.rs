@@ -1,7 +1,7 @@
 use num_traits::{ConstZero, Float, Zero};
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct StaticVector<T, const SIZE: usize>(pub [T; SIZE]);
+pub struct StaticVector<T, const SIZE: usize>([T; SIZE]);
 
 pub type Vector2D<T> = StaticVector<T, 2>;
 pub type Vector3D<T> = StaticVector<T, 3>;
@@ -66,6 +66,12 @@ impl<T> StaticVector<T, 3> {
             _lhs[2] * _rhs[0] - _lhs[0] * _rhs[2],
             _lhs[0] * _rhs[1] - _lhs[1] * _rhs[0],
         ])
+    }
+}
+
+impl<T, const SIZE: usize> From<[T; SIZE]> for StaticVector<T, SIZE> {
+    fn from(value: [T; SIZE]) -> Self {
+        Self(value)
     }
 }
 
