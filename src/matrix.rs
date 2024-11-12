@@ -29,23 +29,21 @@ impl<T, const ROWS: usize, const COLS: usize> StaticMatrix<T, ROWS, COLS> {
 
     pub fn get_col(&self, col: usize) -> Option<StaticVector<T, ROWS>>
     where
-        T: ConstZero + Copy,
+        T: Copy,
     {
         if col >= COLS {
             return None;
         }
 
-        let mut arr = [T::ZERO; ROWS];
-        for (i, row) in self.0.iter().enumerate() {
-            arr[i] = row[col];
-        }
+        let arr: Vec<T> = self.0.iter().map(|row| row[col]).collect();
+        let arr: [T; ROWS] = arr.try_into().unwrap_or_else(|_| panic!("Expected number of elements equal to ROWS"));
 
         Some(arr.into())
     }
 
     pub fn transpose(self) -> StaticMatrix<T, COLS, ROWS>
     where
-        T: ConstZero + Copy + PartialEq,
+        T: Zero + Copy + PartialEq,
     {
         let mut ret: StaticMatrix<T, COLS, ROWS> = StaticMatrix::zero();
         for (i, row) in ret.0.iter_mut().enumerate() {
@@ -175,7 +173,7 @@ where
 impl<T, const ROWS: usize, const SIZE: usize> core::ops::MulAssign<&StaticMatrix<T, SIZE, SIZE>>
     for StaticMatrix<T, ROWS, SIZE>
 where
-    T: ConstZero + Copy + PartialEq + core::ops::Mul<Output = T>,
+    T: Zero + Copy + PartialEq + core::ops::Mul<Output = T>,
 {
     fn mul_assign(&mut self, rhs: &StaticMatrix<T, SIZE, SIZE>) {
         let clone = self.clone();
