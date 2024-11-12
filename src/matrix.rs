@@ -8,18 +8,6 @@ pub struct StaticMatrix<T, const ROWS: usize, const COLS: usize>([[T; COLS]; ROW
 pub type Matrix3x3<T> = StaticMatrix<T, 3, 3>;
 
 impl<T, const ROWS: usize, const COLS: usize> StaticMatrix<T, ROWS, COLS> {
-    pub fn num_rows(&self) -> usize {
-        ROWS
-    }
-
-    pub fn num_cols(&self) -> usize {
-        COLS
-    }
-
-    pub fn dim(&self) -> (usize, usize) {
-        (self.num_rows(), self.num_cols())
-    }
-
     pub fn get_row(&self, row: usize) -> Option<StaticVector<T, COLS>>
     where
         T: Copy,
@@ -35,24 +23,30 @@ impl<T, const ROWS: usize, const COLS: usize> StaticMatrix<T, ROWS, COLS> {
             return None;
         }
 
-        let arr: Vec<T> = self.0.iter().map(|row| row[col]).collect();
-        let arr: [T; ROWS] = arr.try_into().unwrap_or_else(|_| panic!("Expected number of elements equal to ROWS"));
+        let tmp_vec: Vec<T> = self.0.iter().map(|row| row[col]).collect();
+        let arr: [T; ROWS] = tmp_vec
+            .try_into()
+            .unwrap_or_else(|_| panic!("Expected number of elements equal to ROWS"));
 
         Some(arr.into())
     }
 
     pub fn transpose(self) -> StaticMatrix<T, COLS, ROWS>
     where
-        T: Zero + Copy + PartialEq,
+        T: Copy,
     {
-        let mut ret: StaticMatrix<T, COLS, ROWS> = StaticMatrix::zero();
-        for (i, row) in ret.0.iter_mut().enumerate() {
-            for (j, item) in row.iter_mut().enumerate() {
-                *item = self.0[j][i];
-            }
-        }
-
-        ret
+        let tmp_vec: Vec<[T; ROWS]> = (0..COLS)
+            .map(|col| {
+                let tmp_vec: Vec<T> = self.0.iter().map(|row| row[col]).collect();
+                tmp_vec
+                    .try_into()
+                    .unwrap_or_else(|_| panic!("Expected number of elements equal to ROWS"))
+            })
+            .collect();
+        let arr: [[T; ROWS]; COLS] = tmp_vec
+            .try_into()
+            .unwrap_or_else(|_| panic!("Expected number of elements equal to COLS"));
+        arr.into()
     }
 }
 
@@ -71,6 +65,25 @@ impl<T, const SIZE: usize> StaticMatrix<T, SIZE, SIZE> {
         }
 
         ret
+    }
+
+    pub fn transpose_symmetric(mut self) -> Self
+    where
+        T: Copy,
+    {
+        if SIZE <= 1 {
+            return self;
+        }
+
+        for i in 0..SIZE - 1 {
+            for j in i + 1..SIZE {
+                let tmp = self.0[i][j];
+                self.0[i][j] = self.0[j][i];
+                self.0[j][i] = tmp;
+            }
+        }
+
+        self
     }
 }
 
@@ -203,14 +216,6 @@ mod tests {
     use super::StaticMatrix;
 
     #[test]
-    fn matrix_dimensions() {
-        let matrix = StaticMatrix([[1, 2], [3, 4]]);
-        assert_eq!(2, matrix.num_rows());
-        assert_eq!(2, matrix.num_cols());
-        assert_eq!((2, 2), matrix.dim());
-    }
-
-    #[test]
     fn matrix_identity() {
         let identity3x3 = StaticMatrix::identity();
         assert_eq!(StaticMatrix([[1, 0, 0], [0, 1, 0], [0, 0, 1]]), identity3x3);
@@ -224,9 +229,9 @@ mod tests {
 
     #[test]
     fn matrix_square_transpose() {
-        let mat = StaticMatrix([[1, 2], [3, 4]]);
-        let mat_t = StaticMatrix([[1, 3], [2, 4]]);
-        assert_eq!(mat.transpose(), mat_t);
+        let mat = StaticMatrix([[1, 2, 3], [4, 5, 6], [7, 8, 9]]);
+        let mat_t = StaticMatrix([[1, 4, 7], [2, 5, 8], [3, 6, 9]]);
+        assert_eq!(mat.transpose_symmetric(), mat_t);
     }
 
     #[test]
