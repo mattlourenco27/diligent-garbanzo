@@ -26,6 +26,13 @@ impl Viewer {
         self.transform[1][1] = new_zoom[1];
     }
 
+    pub fn zoom_by(&mut self, zoom_modifier: &Vector2D<f64>) {
+        self.transform[2][0] *= zoom_modifier[0];
+        self.transform[2][1] *= zoom_modifier[1];
+        self.transform[0][0] *= zoom_modifier[0];
+        self.transform[1][1] *= zoom_modifier[1];
+    }
+
     pub fn transform_position(&self, position: &Vector2D<f64>) -> Vector2D<f64> {
         let mut transformed = Vector3D::from([position[0], position[1], 1.0]);
         transformed *= &self.transform;

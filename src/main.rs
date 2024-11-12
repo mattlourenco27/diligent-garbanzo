@@ -3,7 +3,6 @@ use std::{env, path::PathBuf};
 
 use drawsvg::objects::ObjectMgr;
 use drawsvg::render::CanvasRenderer;
-use drawsvg::viewer::Viewer;
 use drawsvg::{objects::svg, sdl_wrapper::SDLContext};
 use sdl2::event::Event;
 
@@ -60,11 +59,7 @@ fn main() {
         }
     };
 
-    let mut viewer = Viewer::new();
-    viewer.zoom_to(&[400.0, 400.0].into());
-    viewer.move_to(&[0.5, 0.5].into());
-
-    let mut renderer = match CanvasRenderer::new(window, &object_mgr, &viewer) {
+    let mut renderer = match CanvasRenderer::new(window, &object_mgr) {
         Ok(renderer) => renderer,
         Err(err) => {
             println!("Error while building a renderer: {}", err);
@@ -78,6 +73,26 @@ fn main() {
         for event in sdl_context.event_pump.poll_iter() {
             match event {
                 Event::Quit { .. } => break 'running,
+                Event::KeyDown {
+                    timestamp,
+                    window_id,
+                    keycode,
+                    scancode,
+                    keymod,
+                    repeat,
+                } => {
+                    match keycode {
+                        None => (),
+                        Some(keycode) => {
+                            if keycode == sdl2::keyboard::Keycode::I {
+                                renderer.viewer.zoom_by(&[1.1, 1.1].into());
+                            }
+                            else if keycode == sdl2::keyboard::Keycode::O {
+                                renderer.viewer.zoom_by(&[0.9, 0.9].into());
+                            }
+                        }
+                    }
+                }
                 _ => {}
             }
         }

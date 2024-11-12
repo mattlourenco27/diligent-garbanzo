@@ -11,19 +11,18 @@ use crate::{
 pub struct CanvasRenderer<'a> {
     canvas: WindowCanvas,
     object_mgr: &'a ObjectMgr,
-    viewer: &'a Viewer,
+    pub viewer: Viewer,
 }
 
 impl<'a> CanvasRenderer<'a> {
     pub fn new(
         window: Window,
         object_mgr: &'a ObjectMgr,
-        viewer: &'a Viewer,
     ) -> Result<Self, IntegerOrSdlError> {
         Ok(Self {
             canvas: window.into_canvas().present_vsync().build()?,
             object_mgr,
-            viewer,
+            viewer: Viewer::new(),
         })
     }
 
