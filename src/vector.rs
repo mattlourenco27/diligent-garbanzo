@@ -1,5 +1,7 @@
 use num_traits::{ConstZero, Float, Zero};
 
+use crate::matrix::StaticMatrix;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct StaticVector<T, const SIZE: usize>([T; SIZE]);
 
@@ -180,6 +182,28 @@ where
     }
 }
 
+impl<T, const SIZE: usize> core::ops::MulAssign<&StaticMatrix<T, SIZE, SIZE>> for StaticVector<T, SIZE>
+where
+    T: Zero + Copy + core::ops::Mul<T, Output = T>,
+{
+    fn mul_assign(&mut self, rhs: &StaticMatrix<T, SIZE, SIZE>) {
+        let clone = self.clone();
+
+        for col in 0..SIZE {
+            self.0[col] = clone.dot(&rhs.get_col(col).unwrap());
+        }
+    }
+}
+
+impl<T, const SIZE: usize> core::ops::MulAssign<StaticMatrix<T, SIZE, SIZE>> for StaticVector<T, SIZE>
+where
+    T: Zero + Copy + core::ops::Mul<T, Output = T>,
+{
+    fn mul_assign(&mut self, rhs: StaticMatrix<T, SIZE, SIZE>) {
+        self.mul_assign(&rhs);
+    }
+}
+
 impl<T, const SIZE: usize> core::ops::Add<T> for StaticVector<T, SIZE>
 where
     T: Copy + core::ops::Add<T, Output = T>,
@@ -252,6 +276,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::matrix::StaticMatrix;
+
     use super::StaticVector;
     use num_traits::{ConstZero, Float};
 
@@ -285,6 +311,13 @@ mod tests {
         let mut vec = StaticVector([2, 4, 6]);
         vec *= -9;
         assert_eq!(StaticVector([-18, -36, -54]), vec);
+    }
+
+    #[test]
+    fn vector_mul_matrix_assign() {
+        let mut vec = StaticVector([2, 4]);
+        vec *= StaticMatrix::from([[1, -1], [-1, 3]]);
+        assert_eq!(StaticVector([-2, 10]), vec);
     }
 
     #[test]

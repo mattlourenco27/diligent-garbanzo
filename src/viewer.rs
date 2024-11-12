@@ -1,6 +1,6 @@
 use crate::{
-    matrix::{Matrix3x3, StaticMatrix},
-    vector::Vector2D,
+    matrix::Matrix3x3,
+    vector::{Vector2D, Vector3D},
 };
 
 pub struct Viewer {
@@ -27,8 +27,8 @@ impl Viewer {
     }
 
     pub fn transform_position(&self, position: &Vector2D<f64>) -> Vector2D<f64> {
-        let mut transformed = StaticMatrix::from([[position[0], position[1], 1.0]]);
+        let mut transformed = Vector3D::from([position[0], position[1], 1.0]);
         transformed *= &self.transform;
-        [transformed[0][0], transformed[0][1]].into()
+        [transformed[0], transformed[1]].into()
     }
 }
