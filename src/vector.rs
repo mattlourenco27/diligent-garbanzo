@@ -138,14 +138,23 @@ where
     }
 }
 
-impl<T, const SIZE: usize> core::ops::AddAssign<Self> for StaticVector<T, SIZE>
+impl<T, const SIZE: usize> core::ops::AddAssign<&Self> for StaticVector<T, SIZE>
 where
-    T: core::ops::AddAssign<T>,
+    T: for<'a> core::ops::AddAssign<&'a T>,
 {
-    fn add_assign(&mut self, _rhs: Self) {
-        for (l, r) in self.0.iter_mut().zip(_rhs.0.into_iter()) {
+    fn add_assign(&mut self, rhs: &Self) {
+        for (l, r) in self.0.iter_mut().zip(rhs.0.iter()) {
             *l += r
         }
+    }
+}
+
+impl<T, const SIZE: usize> core::ops::AddAssign<Self> for StaticVector<T, SIZE>
+where
+    T: for<'a> core::ops::AddAssign<&'a T>,
+{
+    fn add_assign(&mut self, rhs: Self) {
+        self.add_assign(&rhs);
     }
 }
 

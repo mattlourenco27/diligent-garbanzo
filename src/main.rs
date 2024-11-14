@@ -85,10 +85,10 @@ fn main() {
                         None => (),
                         Some(keycode) => {
                             if keycode == sdl2::keyboard::Keycode::I {
-                                renderer.viewer.zoom_by(&[1.1, 1.1].into());
+                                renderer.viewer.zoom_by(1.1);
                             }
                             else if keycode == sdl2::keyboard::Keycode::O {
-                                renderer.viewer.zoom_by(&[0.9, 0.9].into());
+                                renderer.viewer.zoom_by(0.9);
                             }
                         }
                     }

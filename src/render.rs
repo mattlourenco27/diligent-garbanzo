@@ -27,7 +27,7 @@ impl<'a> CanvasRenderer<'a> {
     }
 
     pub fn clear(&mut self) {
-        self.canvas.set_draw_color(Color::RGB(0, 0, 0));
+        self.canvas.set_draw_color(Color::WHITE);
         self.canvas.clear();
     }
 
@@ -81,7 +81,7 @@ impl<'a> CanvasRenderer<'a> {
     fn render_point(&mut self, point: &Point) {
         self.canvas.set_draw_color(point.style.fill_color);
 
-        let draw_position = self.viewer.transform_position(&point.position);
+        let draw_position = self.viewer.norm_to_viewer(&point.position);
         self.canvas
             .draw_point(sdl2::rect::Point::new(
                 draw_position[0] as i32,
