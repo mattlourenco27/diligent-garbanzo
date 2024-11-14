@@ -80,19 +80,24 @@ fn main() {
                     scancode,
                     keymod,
                     repeat,
-                } => {
-                    match keycode {
-                        None => (),
-                        Some(keycode) => {
-                            if keycode == sdl2::keyboard::Keycode::I {
-                                renderer.viewer.zoom_by(1.1);
-                            }
-                            else if keycode == sdl2::keyboard::Keycode::O {
-                                renderer.viewer.zoom_by(0.9);
-                            }
+                } => match keycode {
+                    None => (),
+                    Some(keycode) => {
+                        if keycode == sdl2::keyboard::Keycode::I {
+                            renderer.viewer.zoom_by(1.1);
+                        } else if keycode == sdl2::keyboard::Keycode::O {
+                            renderer.viewer.zoom_by(1.0 / 1.1);
+                        } else if keycode == sdl2::keyboard::Keycode::LEFT {
+                            renderer.viewer.move_by([-10.0, 0.0].into());
+                        } else if keycode == sdl2::keyboard::Keycode::UP {
+                            renderer.viewer.move_by([0.0, -10.0].into());
+                        } else if keycode == sdl2::keyboard::Keycode::RIGHT {
+                            renderer.viewer.move_by([10.0, 0.0].into());
+                        } else if keycode == sdl2::keyboard::Keycode::DOWN {
+                            renderer.viewer.move_by([0.0, 10.0].into());
                         }
                     }
-                }
+                },
                 _ => {}
             }
         }

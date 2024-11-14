@@ -5,6 +5,7 @@ use crate::{
         svg::{Element, EmptyTag, Point, StartTag, SVG},
         ObjectMgr,
     },
+    vector::Vector2D,
     viewer::Viewer,
 };
 
@@ -15,14 +16,12 @@ pub struct CanvasRenderer<'a> {
 }
 
 impl<'a> CanvasRenderer<'a> {
-    pub fn new(
-        window: Window,
-        object_mgr: &'a ObjectMgr,
-    ) -> Result<Self, IntegerOrSdlError> {
+    pub fn new(window: Window, object_mgr: &'a ObjectMgr) -> Result<Self, IntegerOrSdlError> {
+        let window_size: [u32; 2] = window.size().into();
         Ok(Self {
             canvas: window.into_canvas().present_vsync().build()?,
             object_mgr,
-            viewer: Viewer::new(),
+            viewer: Viewer::new(Vector2D::from(window_size)),
         })
     }
 
