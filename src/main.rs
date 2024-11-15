@@ -73,33 +73,28 @@ fn main() {
         for event in sdl_context.event_pump.poll_iter() {
             match event {
                 Event::Quit { .. } => break 'running,
-                Event::KeyDown {
-                    timestamp,
-                    window_id,
-                    keycode,
-                    scancode,
-                    keymod,
-                    repeat,
-                } => match keycode {
-                    None => (),
-                    Some(keycode) => {
-                        if keycode == sdl2::keyboard::Keycode::I {
-                            renderer.viewer.zoom_by(1.1);
-                        } else if keycode == sdl2::keyboard::Keycode::O {
-                            renderer.viewer.zoom_by(1.0 / 1.1);
-                        } else if keycode == sdl2::keyboard::Keycode::LEFT {
-                            renderer.viewer.move_by([-10.0, 0.0].into());
-                        } else if keycode == sdl2::keyboard::Keycode::UP {
-                            renderer.viewer.move_by([0.0, -10.0].into());
-                        } else if keycode == sdl2::keyboard::Keycode::RIGHT {
-                            renderer.viewer.move_by([10.0, 0.0].into());
-                        } else if keycode == sdl2::keyboard::Keycode::DOWN {
-                            renderer.viewer.move_by([0.0, 10.0].into());
-                        }
-                    }
-                },
                 _ => {}
             }
+        }
+
+        let keyboard_state = sdl_context.event_pump.keyboard_state();
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::I) {
+            renderer.viewer.zoom_by(1.1);
+        }
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::O) {
+            renderer.viewer.zoom_by(1.0 / 1.1);
+        }
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Left) {
+            renderer.viewer.move_by([-10.0, 0.0].into());
+        }
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Up) {
+            renderer.viewer.move_by([0.0, -10.0].into());
+        }
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Right) {
+            renderer.viewer.move_by([10.0, 0.0].into());
+        }
+        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Down) {
+            renderer.viewer.move_by([0.0, 10.0].into());
         }
 
         renderer.clear();
