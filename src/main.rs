@@ -67,6 +67,8 @@ fn main() {
         }
     };
 
+    renderer.viewer.center_on_object(object_mgr.get_objects().get(0).unwrap());
+
     let mut frames = 0 as u32;
 
     'running: loop {

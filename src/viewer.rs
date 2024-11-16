@@ -2,6 +2,7 @@ use num_traits::ConstZero;
 
 use crate::{
     matrix::Matrix3x3,
+    objects::Object,
     vector::{Vector2D, Vector3D},
 };
 
@@ -22,6 +23,18 @@ impl Viewer {
         };
         ret.regenerate_norm_to_self_transform();
         ret
+    }
+
+    pub fn center_on_object(&mut self, object: &Object) {
+        let object_radius = object.svg_inst.dimension.clone() * 0.5;
+        self.center[0] = object.position[0] + object_radius[0];
+        self.center[1] = object.position[1] + object_radius[1];
+
+        let zoom_x = self.window_size[0] as f64 / object.svg_inst.dimension[0];
+        let zoom_y = self.window_size[1] as f64 / object.svg_inst.dimension[1];
+
+        self.zoom = std::cmp::min_by(zoom_x, zoom_y, |x, y| x.partial_cmp(y).unwrap());
+        self.regenerate_norm_to_self_transform();
     }
 
     pub fn move_to(&mut self, new_center: Vector2D<f64>) {
