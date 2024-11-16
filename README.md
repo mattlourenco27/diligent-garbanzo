@@ -2,13 +2,15 @@
 
 He's great at drawing
 
-# Installation
+## Installation
 
-If you're installing from a fresh machine, make sure you have all the basic packages for working with C and C++. You'll need these because this Rust project links to the SDL2 C library which will need to be recompiled when building from scratch.
+If you're installing from a fresh machine, make sure you have CMake and all the basic packages for working with C and C++. You'll need these because this Rust project statically links to the SDL2 C library which will need to be recompiled when building from scratch.
 
-## Linux
+### Linux / WSL
 
-Here are some packages that I needed to install before I could get sdl2 working:
+> **Note if you are working with WSL**: Since this is a graphics library, this project needs to interact with your GPU and may require some driver tweaking. Using WSL for this project is possible but using Windows is much less painful since it has better driver support.
+
+Ensure you have the following packages installed such that SDL2 can compile from scratch:
 
 * cmake
 * gcc
@@ -19,7 +21,7 @@ Here are some packages that I needed to install before I could get sdl2 working:
 sudo apt-get install cmake gcc g++ libsdl2-dev
 ```
 
-### Troubleshooting
+### Troubleshooting - Linux / WSL
 
 #### Mesa Error
 
@@ -44,10 +46,10 @@ WARNING: dzn is not a conformant Vulkan implementation, testing use only.
 WARNING: Some incorrect rendering might occur because the selected Vulkan device (<Device>) doesn't support base Zink requirements: feats.features.logicOp have_EXT_custom_border_color have_EXT_line_rasterization
 ```
 
-**Please be aware that Vulkan is not supported in WSL**
+**Please be aware that Vulkan is not supported in WSL**.
 Check for device and platform support: <https://docs.vulkan.org/guide/latest/checking_for_support.html>
 
-I had trouble with launching this project on WSL using an NVIDIA GPU. Exporting the following flag fixed my issue:
+WSL sometimes doesn't play well with NVIDIA GPUs. Exporting the following flag might fix the issue:
 
 ```bash
 MESA_D3D12_DEFAULT_ADAPTER_NAME=NVIDIA
@@ -59,6 +61,13 @@ And if that still doesn't work then make sure you have the following installed
 sudo apt install mesa-utils libglu1-mesa-dev freeglut3-dev mesa-common-dev
 ```
 
-## MacOS & Windows
+### MacOS
 
+Install CMake: <https://cmake.org/download/>
 See the sdl2 crate landing page: <https://crates.io/crates/sdl2>
+
+### Windows
+
+Make sure you have a working C/C++ compiler installed. Installing Rust on Windows should already guarantee this.
+Install CMake: <https://cmake.org/download/>
+See the sdl2 crate landing page if you have any further problems: <https://crates.io/crates/sdl2>
