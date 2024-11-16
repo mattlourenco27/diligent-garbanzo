@@ -29,5 +29,25 @@ sudo apt update
 sudo apt upgrade
 ```
 
+#### Missing Vulkan Drivers
+```
+WARNING: dzn is not a conformant Vulkan implementation, testing use only.
+WARNING: dzn is not a conformant Vulkan implementation, testing use only.
+WARNING: Some incorrect rendering might occur because the selected Vulkan device (<Device>) doesn't support base Zink requirements: feats.features.logicOp have_EXT_custom_border_color have_EXT_line_rasterization
+```
+Check for device and platform support: https://docs.vulkan.org/guide/latest/checking_for_support.html
+
+**Please be aware that Vulkan is not supported in WSL**
+
+I had trouble with launching this project on WSL using an NVIDIA GPU. Exporting the following flag fixed my issue:
+```
+MESA_D3D12_DEFAULT_ADAPTER_NAME=NVIDIA
+```
+
+And if that still doesn't work then make sure you have the following installed
+```
+sudo apt install mesa-utils libglu1-mesa-dev freeglut3-dev mesa-common-dev
+```
+
 ## MacOS & Windows
 See the sdl2 crate landing page: https://crates.io/crates/sdl2
