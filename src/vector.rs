@@ -9,10 +9,7 @@ pub type Vector2D<T> = StaticVector<T, 2>;
 pub type Vector3D<T> = StaticVector<T, 3>;
 
 impl<T, const SIZE: usize> StaticVector<T, SIZE> {
-    pub fn len(&self) -> usize {
-        SIZE
-    }
-
+    /// Returns the norm squared of the vector.
     pub fn get_norm2(&self) -> T
     where
         T: Zero + Copy + core::ops::Mul<T, Output = T>,
@@ -20,6 +17,7 @@ impl<T, const SIZE: usize> StaticVector<T, SIZE> {
         self.dot(&self)
     }
 
+    /// Returns the norm of the vector.
     pub fn get_norm(&self) -> T
     where
         T: Float,
@@ -27,6 +25,7 @@ impl<T, const SIZE: usize> StaticVector<T, SIZE> {
         self.get_norm2().sqrt()
     }
 
+    /// Compute the dot product between two vectors.
     pub fn dot(&self, rhs: &Self) -> T
     where
         T: Zero + Copy + core::ops::Mul<T, Output = T>,
@@ -37,6 +36,9 @@ impl<T, const SIZE: usize> StaticVector<T, SIZE> {
             .fold(T::zero(), |acc, (&l, &r)| acc + l * r)
     }
 
+    /// Normalize this vector such that it has a norm of 1.
+    ///
+    /// Returns Err when trying to normalize the zero vector.
     pub fn normalize(&mut self) -> Result<(), String>
     where
         T: Float + core::ops::MulAssign,
@@ -49,24 +51,28 @@ impl<T, const SIZE: usize> StaticVector<T, SIZE> {
         Ok(())
     }
 
-    pub fn unit(mut self) -> Result<Self, String>
+    /// Returns a unit vector pointing in the same direction as this vector
+    pub fn unit(&self) -> Result<Self, String>
     where
         T: Float + core::ops::MulAssign,
     {
-        self.normalize()?;
-        Ok(self)
+        let mut ret = self.clone();
+        ret.normalize()?;
+
+        Ok(ret)
     }
 }
 
 impl<T> StaticVector<T, 3> {
-    pub fn cross(_lhs: &Self, _rhs: &Self) -> Self
+    /// Compute the cross product of two vectors.
+    pub fn cross(lhs: &Self, rhs: &Self) -> Self
     where
         T: Float + core::ops::Add<T, Output = T> + core::ops::Mul<T, Output = T>,
     {
         StaticVector([
-            _lhs[1] * _rhs[2] - _lhs[2] * _rhs[1],
-            _lhs[2] * _rhs[0] - _lhs[0] * _rhs[2],
-            _lhs[0] * _rhs[1] - _lhs[1] * _rhs[0],
+            lhs[1] * rhs[2] - lhs[2] * rhs[1],
+            lhs[2] * rhs[0] - lhs[0] * rhs[2],
+            lhs[0] * rhs[1] - lhs[1] * rhs[0],
         ])
     }
 }
@@ -101,6 +107,7 @@ where
     }
 }
 
+/// Negating a vector reverses its direction.
 impl<T, const SIZE: usize> core::ops::Neg for StaticVector<T, SIZE>
 where
     T: Copy + core::ops::Neg<Output = T>,
@@ -131,30 +138,30 @@ impl<T, const SIZE: usize> core::ops::AddAssign<T> for StaticVector<T, SIZE>
 where
     T: Copy + core::ops::AddAssign<T>,
 {
-    fn add_assign(&mut self, _rhs: T) {
+    fn add_assign(&mut self, rhs: T) {
         for item in self.0.iter_mut() {
-            *item += _rhs;
+            *item += rhs;
         }
     }
 }
 
 impl<T, const SIZE: usize> core::ops::AddAssign<&Self> for StaticVector<T, SIZE>
 where
-    T: for<'a> core::ops::AddAssign<&'a T>,
+    T: Copy + core::ops::AddAssign<T>,
 {
     fn add_assign(&mut self, rhs: &Self) {
         for (l, r) in self.0.iter_mut().zip(rhs.0.iter()) {
-            *l += r
+            *l += *r
         }
     }
 }
 
 impl<T, const SIZE: usize> core::ops::AddAssign<Self> for StaticVector<T, SIZE>
 where
-    T: for<'a> core::ops::AddAssign<&'a T>,
+    T: Copy + core::ops::AddAssign<T>,
 {
     fn add_assign(&mut self, rhs: Self) {
-        self.add_assign(&rhs);
+        *self += &rhs;
     }
 }
 
@@ -162,21 +169,30 @@ impl<T, const SIZE: usize> core::ops::SubAssign<T> for StaticVector<T, SIZE>
 where
     T: Copy + core::ops::SubAssign<T>,
 {
-    fn sub_assign(&mut self, _rhs: T) {
+    fn sub_assign(&mut self, rhs: T) {
         for item in self.0.iter_mut() {
-            *item -= _rhs
+            *item -= rhs
+        }
+    }
+}
+
+impl<T, const SIZE: usize> core::ops::SubAssign<&Self> for StaticVector<T, SIZE>
+where
+    T: Copy + core::ops::SubAssign<T>,
+{
+    fn sub_assign(&mut self, rhs: &Self) {
+        for (l, r) in self.0.iter_mut().zip(rhs.0.iter()) {
+            *l -= *r
         }
     }
 }
 
 impl<T, const SIZE: usize> core::ops::SubAssign<Self> for StaticVector<T, SIZE>
 where
-    T: core::ops::SubAssign<T>,
+    T: Copy + core::ops::SubAssign<T>,
 {
-    fn sub_assign(&mut self, _rhs: Self) {
-        for (l, r) in self.0.iter_mut().zip(_rhs.0.into_iter()) {
-            *l -= r
-        }
+    fn sub_assign(&mut self, rhs: Self) {
+        *self -= &rhs
     }
 }
 
@@ -184,14 +200,16 @@ impl<T, const SIZE: usize> core::ops::MulAssign<T> for StaticVector<T, SIZE>
 where
     T: Copy + core::ops::MulAssign<T>,
 {
-    fn mul_assign(&mut self, _rhs: T) {
+    fn mul_assign(&mut self, rhs: T) {
         for item in self.0.iter_mut() {
-            *item *= _rhs
+            *item *= rhs
         }
     }
 }
 
-impl<T, const SIZE: usize> core::ops::MulAssign<&StaticMatrix<T, SIZE, SIZE>> for StaticVector<T, SIZE>
+/// Matrix multiplication.
+impl<T, const SIZE: usize> core::ops::MulAssign<&StaticMatrix<T, SIZE, SIZE>>
+    for StaticVector<T, SIZE>
 where
     T: Zero + Copy + core::ops::Mul<T, Output = T>,
 {
@@ -204,12 +222,24 @@ where
     }
 }
 
-impl<T, const SIZE: usize> core::ops::MulAssign<StaticMatrix<T, SIZE, SIZE>> for StaticVector<T, SIZE>
+impl<T, const SIZE: usize> core::ops::MulAssign<StaticMatrix<T, SIZE, SIZE>>
+    for StaticVector<T, SIZE>
 where
     T: Zero + Copy + core::ops::Mul<T, Output = T>,
 {
     fn mul_assign(&mut self, rhs: StaticMatrix<T, SIZE, SIZE>) {
-        self.mul_assign(&rhs);
+        *self *= &rhs;
+    }
+}
+
+impl<T, const SIZE: usize> core::ops::Add<T> for &StaticVector<T, SIZE>
+where
+    T: Copy + core::ops::Add<T, Output = T>,
+{
+    type Output = StaticVector<T, SIZE>;
+
+    fn add(self, rhs: T) -> Self::Output {
+        self.clone() + rhs
     }
 }
 
@@ -217,27 +247,71 @@ impl<T, const SIZE: usize> core::ops::Add<T> for StaticVector<T, SIZE>
 where
     T: Copy + core::ops::Add<T, Output = T>,
 {
-    type Output = Self;
+    type Output = StaticVector<T, SIZE>;
 
-    fn add(mut self, _rhs: T) -> Self::Output {
+    fn add(mut self, rhs: T) -> Self::Output {
         for item in self.0.iter_mut() {
-            *item = *item + _rhs;
+            *item = *item + rhs;
         }
         self
     }
 }
 
-impl<T, const SIZE: usize> core::ops::Add<Self> for StaticVector<T, SIZE>
+impl<T, const SIZE: usize> core::ops::Add<&StaticVector<T, SIZE>> for &StaticVector<T, SIZE>
 where
     T: Copy + core::ops::Add<T, Output = T>,
 {
-    type Output = Self;
+    type Output = StaticVector<T, SIZE>;
 
-    fn add(mut self, _rhs: Self) -> Self::Output {
-        for (l, r) in self.0.iter_mut().zip(_rhs.0.into_iter()) {
-            *l = *l + r;
+    fn add(self, rhs: &StaticVector<T, SIZE>) -> Self::Output {
+        self.clone() + rhs
+    }
+}
+
+impl<T, const SIZE: usize> core::ops::Add<StaticVector<T, SIZE>> for &StaticVector<T, SIZE>
+where
+    T: Copy + core::ops::Add<T, Output = T>,
+{
+    type Output = StaticVector<T, SIZE>;
+
+    fn add(self, rhs: StaticVector<T, SIZE>) -> Self::Output {
+        self.clone() + &rhs
+    }
+}
+
+impl<T, const SIZE: usize> core::ops::Add<&StaticVector<T, SIZE>> for StaticVector<T, SIZE>
+where
+    T: Copy + core::ops::Add<T, Output = T>,
+{
+    type Output = StaticVector<T, SIZE>;
+
+    fn add(mut self, rhs: &StaticVector<T, SIZE>) -> Self::Output {
+        for (l, r) in self.0.iter_mut().zip(rhs.0.iter()) {
+            *l = *l + *r;
         }
         self
+    }
+}
+
+impl<T, const SIZE: usize> core::ops::Add<StaticVector<T, SIZE>> for StaticVector<T, SIZE>
+where
+    T: Copy + core::ops::Add<T, Output = T>,
+{
+    type Output = StaticVector<T, SIZE>;
+
+    fn add(self, rhs: StaticVector<T, SIZE>) -> Self::Output {
+        self + &rhs
+    }
+}
+
+impl<T, const SIZE: usize> core::ops::Sub<T> for &StaticVector<T, SIZE>
+where
+    T: Copy + core::ops::Sub<T, Output = T>,
+{
+    type Output = StaticVector<T, SIZE>;
+
+    fn sub(self, rhs: T) -> Self::Output {
+        self.clone() - rhs
     }
 }
 
@@ -245,27 +319,71 @@ impl<T, const SIZE: usize> core::ops::Sub<T> for StaticVector<T, SIZE>
 where
     T: Copy + core::ops::Sub<T, Output = T>,
 {
-    type Output = Self;
+    type Output = StaticVector<T, SIZE>;
 
-    fn sub(mut self, _rhs: T) -> Self::Output {
+    fn sub(mut self, rhs: T) -> Self::Output {
         for item in self.0.iter_mut() {
-            *item = *item - _rhs;
+            *item = *item - rhs;
         }
         self
     }
 }
 
-impl<T, const SIZE: usize> core::ops::Sub<Self> for StaticVector<T, SIZE>
+impl<T, const SIZE: usize> core::ops::Sub<&StaticVector<T, SIZE>> for &StaticVector<T, SIZE>
 where
     T: Copy + core::ops::Sub<T, Output = T>,
 {
-    type Output = Self;
+    type Output = StaticVector<T, SIZE>;
 
-    fn sub(mut self, _rhs: Self) -> Self::Output {
-        for (l, r) in self.0.iter_mut().zip(_rhs.0.into_iter()) {
-            *l = *l - r;
+    fn sub(self, rhs: &StaticVector<T, SIZE>) -> Self::Output {
+        self.clone() - rhs
+    }
+}
+
+impl<T, const SIZE: usize> core::ops::Sub<StaticVector<T, SIZE>> for &StaticVector<T, SIZE>
+where
+    T: Copy + core::ops::Sub<T, Output = T>,
+{
+    type Output = StaticVector<T, SIZE>;
+
+    fn sub(self, rhs: StaticVector<T, SIZE>) -> Self::Output {
+        self.clone() - &rhs
+    }
+}
+
+impl<T, const SIZE: usize> core::ops::Sub<&StaticVector<T, SIZE>> for StaticVector<T, SIZE>
+where
+    T: Copy + core::ops::Sub<T, Output = T>,
+{
+    type Output = StaticVector<T, SIZE>;
+
+    fn sub(mut self, rhs: &StaticVector<T, SIZE>) -> Self::Output {
+        for (l, r) in self.0.iter_mut().zip(rhs.0.iter()) {
+            *l = *l - *r;
         }
         self
+    }
+}
+
+impl<T, const SIZE: usize> core::ops::Sub<StaticVector<T, SIZE>> for StaticVector<T, SIZE>
+where
+    T: Copy + core::ops::Sub<T, Output = T>,
+{
+    type Output = StaticVector<T, SIZE>;
+
+    fn sub(self, rhs: StaticVector<T, SIZE>) -> Self::Output {
+        self - &rhs
+    }
+}
+
+impl<T, const SIZE: usize> core::ops::Mul<T> for &StaticVector<T, SIZE>
+where
+    T: Copy + core::ops::Mul<T, Output = T>,
+{
+    type Output = StaticVector<T, SIZE>;
+
+    fn mul(self, rhs: T) -> Self::Output {
+        self.clone() * rhs
     }
 }
 
@@ -275,11 +393,65 @@ where
 {
     type Output = Self;
 
-    fn mul(mut self, _rhs: T) -> Self::Output {
+    fn mul(mut self, rhs: T) -> Self::Output {
         for item in self.0.iter_mut() {
-            *item = *item * _rhs;
+            *item = *item * rhs;
         }
         self
+    }
+}
+
+impl<T, const COLS: usize, const SIZE: usize> core::ops::Mul<&StaticMatrix<T, SIZE, COLS>>
+    for &StaticVector<T, SIZE>
+where
+    T: Zero + Copy + core::ops::Mul<T, Output = T>,
+{
+    type Output = StaticVector<T, COLS>;
+
+    fn mul(self, rhs: &StaticMatrix<T, SIZE, COLS>) -> Self::Output {
+        let mut ret = [T::zero(); COLS];
+
+        for col in 0..COLS {
+            ret[col] = self.dot(&rhs.get_col(col).unwrap());
+        }
+
+        StaticVector::from(ret)
+    }
+}
+
+impl<T, const COLS: usize, const SIZE: usize> core::ops::Mul<StaticMatrix<T, SIZE, COLS>>
+    for &StaticVector<T, SIZE>
+where
+    T: Zero + Copy + core::ops::Mul<T, Output = T>,
+{
+    type Output = StaticVector<T, COLS>;
+
+    fn mul(self, rhs: StaticMatrix<T, SIZE, COLS>) -> Self::Output {
+        self * &rhs
+    }
+}
+
+impl<T, const COLS: usize, const SIZE: usize> core::ops::Mul<&StaticMatrix<T, SIZE, COLS>>
+    for StaticVector<T, SIZE>
+where
+    T: Zero + Copy + core::ops::Mul<T, Output = T>,
+{
+    type Output = StaticVector<T, COLS>;
+
+    fn mul(self, rhs: &StaticMatrix<T, SIZE, COLS>) -> Self::Output {
+        &self * rhs
+    }
+}
+
+impl<T, const COLS: usize, const SIZE: usize> core::ops::Mul<StaticMatrix<T, SIZE, COLS>>
+    for StaticVector<T, SIZE>
+where
+    T: Zero + Copy + core::ops::Mul<T, Output = T>,
+{
+    type Output = StaticVector<T, COLS>;
+
+    fn mul(self, rhs: StaticMatrix<T, SIZE, COLS>) -> Self::Output {
+        &self * &rhs
     }
 }
 
@@ -296,7 +468,8 @@ mod tests {
         eps: T,
     ) -> bool {
         vec_expected
-            .0.iter()
+            .0
+            .iter()
             .zip(vec_result.0.iter())
             .all(|(&expected, &result)| (expected - result).abs() < eps)
     }
@@ -371,6 +544,13 @@ mod tests {
         let mut vec = StaticVector([2, 4, 6]);
         vec = vec * -9;
         assert_eq!(StaticVector([-18, -36, -54]), vec);
+    }
+
+    #[test]
+    fn vector_mul_matrix() {
+        let mut vec = StaticVector([2, 4]);
+        vec = vec * StaticMatrix::from([[1, -1], [-1, 3]]);
+        assert_eq!(StaticVector([-2, 10]), vec);
     }
 
     #[test]
@@ -509,11 +689,5 @@ mod tests {
             StaticVector([16.0, 4.0, 8.0]),
             StaticVector::cross(&vec1, &vec2)
         );
-    }
-
-    #[test]
-    fn vector_len() {
-        let vec = StaticVector([1, 2, 3, 4]);
-        assert_eq!(4, vec.len());
     }
 }

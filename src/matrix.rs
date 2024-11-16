@@ -8,13 +8,19 @@ pub struct StaticMatrix<T, const ROWS: usize, const COLS: usize>([[T; COLS]; ROW
 pub type Matrix3x3<T> = StaticMatrix<T, 3, 3>;
 
 impl<T, const ROWS: usize, const COLS: usize> StaticMatrix<T, ROWS, COLS> {
+    /// Returns a copy of the specified row.
+    ///
+    /// Returns None if the index is greater than or equal to the ROWS hyperparameter.
     pub fn get_row(&self, row: usize) -> Option<StaticVector<T, COLS>>
     where
         T: Copy,
     {
-        Some((*self.0.get(row)?).into())
+        Some(StaticVector::from(*self.0.get(row)?))
     }
 
+    /// Returns a copy of the specified column.
+    ///
+    /// Returns None if the index is greater than or equal to the COLS hyperparameter.
     pub fn get_col(&self, col: usize) -> Option<StaticVector<T, ROWS>>
     where
         T: Copy,
@@ -31,6 +37,9 @@ impl<T, const ROWS: usize, const COLS: usize> StaticMatrix<T, ROWS, COLS> {
         Some(arr.into())
     }
 
+    /// Returns the transpose of this Matrix.
+    ///
+    /// Consumes self.
     pub fn transpose(self) -> StaticMatrix<T, COLS, ROWS>
     where
         T: Copy,
@@ -51,6 +60,7 @@ impl<T, const ROWS: usize, const COLS: usize> StaticMatrix<T, ROWS, COLS> {
 }
 
 impl<T, const SIZE: usize> StaticMatrix<T, SIZE, SIZE> {
+    /// Constructs the identity for a matrix of size SIZE.
     pub fn identity() -> Self
     where
         T: ConstZero + Copy + One + PartialEq,
@@ -67,6 +77,11 @@ impl<T, const SIZE: usize> StaticMatrix<T, SIZE, SIZE> {
         ret
     }
 
+    /// Returns the transpose of this matrix.
+    ///
+    /// Much faster than the StaticMatrix::transpose() function but
+    /// may only be used on square matrices.
+    /// Consumes self.
     pub fn transpose_symmetric(mut self) -> Self
     where
         T: Copy,
@@ -147,6 +162,7 @@ impl<T, const ROWS: usize, const COLS: usize> core::ops::IndexMut<usize>
     }
 }
 
+/// Element-wise addition of two matrices of the same size and dimension.
 impl<T, const ROWS: usize, const COLS: usize> core::ops::Add for StaticMatrix<T, ROWS, COLS>
 where
     T: Copy + core::ops::Add<T, Output = T>,
@@ -163,26 +179,7 @@ where
     }
 }
 
-impl<T, const X: usize, const Y: usize, const Z: usize> core::ops::Mul<StaticMatrix<T, Y, Z>>
-    for StaticMatrix<T, X, Y>
-where
-    T: ConstZero + Copy + PartialEq + core::ops::Mul<Output = T>,
-{
-    type Output = StaticMatrix<T, X, Z>;
-
-    fn mul(self, rhs: StaticMatrix<T, Y, Z>) -> Self::Output {
-        let mut ret = StaticMatrix::ZERO;
-
-        for (i, row) in ret.0.iter_mut().enumerate() {
-            for (j, item) in row.iter_mut().enumerate() {
-                *item = self.get_row(i).unwrap().dot(&rhs.get_col(j).unwrap());
-            }
-        }
-
-        ret
-    }
-}
-
+/// Matrix multiplication.
 impl<T, const ROWS: usize, const SIZE: usize> core::ops::MulAssign<&StaticMatrix<T, SIZE, SIZE>>
     for StaticMatrix<T, ROWS, SIZE>
 where
@@ -202,10 +199,66 @@ where
 impl<T, const ROWS: usize, const SIZE: usize> core::ops::MulAssign<StaticMatrix<T, SIZE, SIZE>>
     for StaticMatrix<T, ROWS, SIZE>
 where
-    T: ConstZero + Copy + PartialEq + core::ops::Mul<Output = T>,
+    T: Zero + Copy + PartialEq + core::ops::Mul<Output = T>,
 {
     fn mul_assign(&mut self, rhs: StaticMatrix<T, SIZE, SIZE>) {
-        self.mul_assign(&rhs);
+        *self *= &rhs;
+    }
+}
+
+impl<T, const X: usize, const Y: usize, const Z: usize> core::ops::Mul<&StaticMatrix<T, Y, Z>>
+    for &StaticMatrix<T, X, Y>
+where
+    T: Zero + Copy + PartialEq + core::ops::Mul<Output = T>,
+{
+    type Output = StaticMatrix<T, X, Z>;
+
+    fn mul(self, rhs: &StaticMatrix<T, Y, Z>) -> Self::Output {
+        let mut ret = [[T::zero(); Z]; X];
+
+        for (i, row) in ret.iter_mut().enumerate() {
+            for (j, item) in row.iter_mut().enumerate() {
+                *item = self.get_row(i).unwrap().dot(&rhs.get_col(j).unwrap());
+            }
+        }
+
+        StaticMatrix::from(ret)
+    }
+}
+
+impl<T, const X: usize, const Y: usize, const Z: usize> core::ops::Mul<StaticMatrix<T, Y, Z>>
+    for &StaticMatrix<T, X, Y>
+where
+    T: Zero + Copy + PartialEq + core::ops::Mul<Output = T>,
+{
+    type Output = StaticMatrix<T, X, Z>;
+
+    fn mul(self, rhs: StaticMatrix<T, Y, Z>) -> Self::Output {
+        self * &rhs
+    }
+}
+
+impl<T, const X: usize, const Y: usize, const Z: usize> core::ops::Mul<&StaticMatrix<T, Y, Z>>
+    for StaticMatrix<T, X, Y>
+where
+    T: Zero + Copy + PartialEq + core::ops::Mul<Output = T>,
+{
+    type Output = StaticMatrix<T, X, Z>;
+
+    fn mul(self, rhs: &StaticMatrix<T, Y, Z>) -> Self::Output {
+        &self * rhs
+    }
+}
+
+impl<T, const X: usize, const Y: usize, const Z: usize> core::ops::Mul<StaticMatrix<T, Y, Z>>
+    for StaticMatrix<T, X, Y>
+where
+    T: Zero + Copy + PartialEq + core::ops::Mul<Output = T>,
+{
+    type Output = StaticMatrix<T, X, Z>;
+
+    fn mul(self, rhs: StaticMatrix<T, Y, Z>) -> Self::Output {
+        &self * &rhs
     }
 }
 
@@ -264,7 +317,7 @@ mod tests {
         let mat_a = StaticMatrix([[1, 2], [3, 4]]);
         let mat_b = StaticMatrix([[1, -1], [-1, 1]]);
         let mat_res = StaticMatrix([[-1, 1], [-1, 1]]);
-        assert_eq!(mat_a.clone() * mat_b.clone(), mat_res.clone());
+        assert_eq!(&mat_a * &mat_b, mat_res.clone());
         assert_eq!(mat_b.transpose() * mat_a.transpose(), mat_res.transpose());
     }
 

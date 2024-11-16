@@ -58,9 +58,9 @@ impl Viewer {
     }
 
     pub fn norm_to_viewer(&self, position: &Vector2D<f64>) -> Vector2D<f64> {
-        let mut transformed = Vector3D::from([position[0], position[1], 1.0]);
-        transformed *= &self.norm_to_self_transform;
-        [transformed[0], transformed[1]].into()
+        let transformed =
+            Vector3D::from([position[0], position[1], 1.0]) * &self.norm_to_self_transform;
+        Vector2D::from([transformed[0], transformed[1]])
     }
 
     fn regenerate_norm_to_self_transform(&mut self) {
@@ -79,6 +79,6 @@ impl Viewer {
         center_matrix[2][0] = self.window_size[0] as f64 / 2.0;
         center_matrix[2][1] = self.window_size[1] as f64 / 2.0;
 
-        self.norm_to_self_transform = position_matrix * zoom_matrix * center_matrix;
+        self.norm_to_self_transform = &position_matrix * &zoom_matrix * &center_matrix;
     }
 }
