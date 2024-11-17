@@ -183,7 +183,7 @@ where
 impl<T, const ROWS: usize, const SIZE: usize> core::ops::MulAssign<&StaticMatrix<T, SIZE, SIZE>>
     for StaticMatrix<T, ROWS, SIZE>
 where
-    T: Zero + Copy + PartialEq + core::ops::Mul<Output = T>,
+    T: Zero + Copy + core::ops::Mul<Output = T>,
 {
     fn mul_assign(&mut self, rhs: &StaticMatrix<T, SIZE, SIZE>) {
         let clone = self.clone();
@@ -199,7 +199,7 @@ where
 impl<T, const ROWS: usize, const SIZE: usize> core::ops::MulAssign<StaticMatrix<T, SIZE, SIZE>>
     for StaticMatrix<T, ROWS, SIZE>
 where
-    T: Zero + Copy + PartialEq + core::ops::Mul<Output = T>,
+    T: Zero + Copy + core::ops::Mul<Output = T>,
 {
     fn mul_assign(&mut self, rhs: StaticMatrix<T, SIZE, SIZE>) {
         *self *= &rhs;
@@ -209,7 +209,7 @@ where
 impl<T, const X: usize, const Y: usize, const Z: usize> core::ops::Mul<&StaticMatrix<T, Y, Z>>
     for &StaticMatrix<T, X, Y>
 where
-    T: Zero + Copy + PartialEq + core::ops::Mul<Output = T>,
+    T: Zero + Copy + core::ops::Mul<Output = T>,
 {
     type Output = StaticMatrix<T, X, Z>;
 
@@ -229,7 +229,7 @@ where
 impl<T, const X: usize, const Y: usize, const Z: usize> core::ops::Mul<StaticMatrix<T, Y, Z>>
     for &StaticMatrix<T, X, Y>
 where
-    T: Zero + Copy + PartialEq + core::ops::Mul<Output = T>,
+    T: Zero + Copy + core::ops::Mul<Output = T>,
 {
     type Output = StaticMatrix<T, X, Z>;
 
@@ -241,7 +241,7 @@ where
 impl<T, const X: usize, const Y: usize, const Z: usize> core::ops::Mul<&StaticMatrix<T, Y, Z>>
     for StaticMatrix<T, X, Y>
 where
-    T: Zero + Copy + PartialEq + core::ops::Mul<Output = T>,
+    T: Zero + Copy + core::ops::Mul<Output = T>,
 {
     type Output = StaticMatrix<T, X, Z>;
 
@@ -253,7 +253,7 @@ where
 impl<T, const X: usize, const Y: usize, const Z: usize> core::ops::Mul<StaticMatrix<T, Y, Z>>
     for StaticMatrix<T, X, Y>
 where
-    T: Zero + Copy + PartialEq + core::ops::Mul<Output = T>,
+    T: Zero + Copy + core::ops::Mul<Output = T>,
 {
     type Output = StaticMatrix<T, X, Z>;
 
@@ -262,11 +262,68 @@ where
     }
 }
 
+/// Multiply by a vector.
+/// 
+/// Treat multiplication with a vector as if the vector was a column vector.
+impl<T, const ROWS: usize, const COLS: usize> core::ops::Mul<&StaticVector<T, COLS>>
+    for &StaticMatrix<T, ROWS, COLS>
+where
+    T: Zero + Copy + core::ops::Mul<Output = T>,
+{
+    type Output = StaticVector<T, ROWS>;
+
+    fn mul(self, rhs: &StaticVector<T, COLS>) -> Self::Output {
+        let mut ret = [T::zero(); ROWS];
+
+        for (i, item) in ret.iter_mut().enumerate() {
+            *item = self.get_row(i).unwrap().dot(&rhs);
+        }
+
+        StaticVector::from(ret)
+    }
+}
+
+impl<T, const ROWS: usize, const COLS: usize> core::ops::Mul<StaticVector<T, COLS>>
+    for &StaticMatrix<T, ROWS, COLS>
+where
+    T: Zero + Copy + core::ops::Mul<Output = T>,
+{
+    type Output = StaticVector<T, ROWS>;
+
+    fn mul(self, rhs: StaticVector<T, COLS>) -> Self::Output {
+        self * &rhs
+    }
+}
+
+impl<T, const ROWS: usize, const COLS: usize> core::ops::Mul<&StaticVector<T, COLS>>
+    for StaticMatrix<T, ROWS, COLS>
+where
+    T: Zero + Copy + core::ops::Mul<Output = T>,
+{
+    type Output = StaticVector<T, ROWS>;
+
+    fn mul(self, rhs: &StaticVector<T, COLS>) -> Self::Output {
+        &self * rhs
+    }
+}
+
+impl<T, const ROWS: usize, const COLS: usize> core::ops::Mul<StaticVector<T, COLS>>
+    for StaticMatrix<T, ROWS, COLS>
+where
+    T: Zero + Copy + core::ops::Mul<Output = T>,
+{
+    type Output = StaticVector<T, ROWS>;
+
+    fn mul(self, rhs: StaticVector<T, COLS>) -> Self::Output {
+        &self * &rhs
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::matrix::Matrix3x3;
+    use crate::vector::StaticVector;
 
-    use super::StaticMatrix;
+    use super::{StaticMatrix, Matrix3x3};
 
     #[test]
     fn matrix_identity() {
@@ -327,5 +384,13 @@ mod tests {
         let mat_b = StaticMatrix([[1, -1], [-1, 1]]);
         let mat_res = StaticMatrix([[-1, 1]]);
         assert_eq!(mat_a * mat_b, mat_res);
+    }
+
+    #[test]
+    fn mat_vec_mul() {
+        let mat = StaticMatrix([[1, 2, 3], [-1, -2, -3], [1, 0, -1]]);
+        let vec = StaticVector::from([1, 2, -1]);
+        let vec_res = StaticVector::from([2, -2, 2]);
+        assert_eq!(mat * vec, vec_res);
     }
 }
