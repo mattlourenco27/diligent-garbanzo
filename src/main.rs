@@ -3,6 +3,7 @@ use std::{env, path::PathBuf};
 
 use drawsvg::objects::ObjectMgr;
 use drawsvg::render::CanvasRenderer;
+use drawsvg::vector::Vector2D;
 use drawsvg::{objects::svg, sdl_wrapper::SDLContext};
 use sdl2::event::Event;
 
@@ -67,7 +68,9 @@ fn main() {
         }
     };
 
-    renderer.viewer.center_on_object(object_mgr.get_objects().get(0).unwrap());
+    renderer
+        .viewer
+        .center_on_object(object_mgr.get_objects().get(0).unwrap());
 
     let mut frames = 0 as u32;
 
@@ -87,16 +90,16 @@ fn main() {
             renderer.viewer.zoom_by(1.0 / 1.1);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Left) {
-            renderer.viewer.move_by([-10.0, 0.0].into());
+            renderer.viewer.move_by(Vector2D::from([-10.0, 0.0]));
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Up) {
-            renderer.viewer.move_by([0.0, -10.0].into());
+            renderer.viewer.move_by(Vector2D::from([0.0, -10.0]));
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Right) {
-            renderer.viewer.move_by([10.0, 0.0].into());
+            renderer.viewer.move_by(Vector2D::from([10.0, 0.0]));
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Down) {
-            renderer.viewer.move_by([0.0, 10.0].into());
+            renderer.viewer.move_by(Vector2D::from([0.0, 10.0]));
         }
 
         renderer.clear();

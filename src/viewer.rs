@@ -15,14 +15,18 @@ pub struct Viewer {
 
 impl Viewer {
     pub fn new(window_size: Vector2D<u32>) -> Self {
-        let mut ret = Self {
+        const DEFAULT_CENTER: Vector2D<f64> = Vector2D::ZERO;
+        const DEFAULT_ZOOM: f64 = 1.0;
+        Self {
+            center: DEFAULT_CENTER,
+            zoom: DEFAULT_ZOOM,
+            norm_to_self_transform: Self::generate_norm_to_self_transform(
+                &DEFAULT_CENTER,
+                DEFAULT_ZOOM,
+                &window_size,
+            ),
             window_size,
-            center: Vector2D::ZERO,
-            zoom: 1.0,
-            norm_to_self_transform: Matrix3x3::IDENTITY3X3,
-        };
-        ret.regenerate_norm_to_self_transform();
-        ret
+        }
     }
 
     pub fn center_on_object(&mut self, object: &Object) {
@@ -34,27 +38,32 @@ impl Viewer {
         let zoom_y = self.window_size[1] as f64 / object.svg_inst.dimension[1];
 
         self.zoom = std::cmp::min_by(zoom_x, zoom_y, |x, y| x.partial_cmp(y).unwrap());
-        self.regenerate_norm_to_self_transform();
+
+        if self.zoom.is_infinite() {
+            self.zoom = 1.0;
+        }
+
+        self.update_norm_to_self_transform();
     }
 
     pub fn move_to(&mut self, new_center: Vector2D<f64>) {
         self.center = new_center;
-        self.regenerate_norm_to_self_transform();
+        self.update_norm_to_self_transform();
     }
 
     pub fn move_by(&mut self, delta_center: Vector2D<f64>) {
         self.center += delta_center * (1.0 / self.zoom);
-        self.regenerate_norm_to_self_transform();
+        self.update_norm_to_self_transform();
     }
 
     pub fn zoom_to(&mut self, new_zoom: f64) {
         self.zoom = new_zoom;
-        self.regenerate_norm_to_self_transform();
+        self.update_norm_to_self_transform();
     }
 
     pub fn zoom_by(&mut self, zoom_modifier: f64) {
         self.zoom *= zoom_modifier;
-        self.regenerate_norm_to_self_transform();
+        self.update_norm_to_self_transform();
     }
 
     pub fn norm_to_viewer(&self, position: &Vector2D<f64>) -> Vector2D<f64> {
@@ -62,23 +71,32 @@ impl Viewer {
         Vector2D::from_vector(&transformed)
     }
 
-    fn regenerate_norm_to_self_transform(&mut self) {
+    fn generate_norm_to_self_transform(
+        center: &Vector2D<f64>,
+        zoom: f64,
+        window_size: &Vector2D<u32>,
+    ) -> Matrix3x3<f64> {
         // Translate to viewer position
         let mut position_matrix = Matrix3x3::IDENTITY3X3;
-        position_matrix[2][0] = -self.center[0];
-        position_matrix[2][1] = -self.center[1];
+        position_matrix[2][0] = -center[0];
+        position_matrix[2][1] = -center[1];
 
         // Zoom the appropriate amount
         let mut zoom_matrix = Matrix3x3::IDENTITY3X3;
-        zoom_matrix[0][0] = self.zoom;
-        zoom_matrix[1][1] = self.zoom;
+        zoom_matrix[0][0] = zoom;
+        zoom_matrix[1][1] = zoom;
 
         // Move origin to center of the viewer
         let mut center_matrix = Matrix3x3::IDENTITY3X3;
-        center_matrix[2][0] = self.window_size[0] as f64 / 2.0;
-        center_matrix[2][1] = self.window_size[1] as f64 / 2.0;
+        center_matrix[2][0] = window_size[0] as f64 / 2.0;
+        center_matrix[2][1] = window_size[1] as f64 / 2.0;
 
-        self.norm_to_self_transform = &position_matrix * &zoom_matrix * &center_matrix;
+        &position_matrix * &zoom_matrix * &center_matrix
+    }
+
+    fn update_norm_to_self_transform(&mut self) {
+        self.norm_to_self_transform =
+            Self::generate_norm_to_self_transform(&self.center, self.zoom, &self.window_size);
     }
 }
 
@@ -168,26 +186,65 @@ mod tests {
 
         viewer.center_on_object(&object);
 
-        assert_eq!(viewer.center, Vector2D::from([14.0, 7.0]));
+        assert_eq!(
+            viewer.center,
+            Vector2D::from([(20.0 / 2.0) + 4.0, (20.0 / 2.0) - 3.0])
+        );
     }
 
     #[test]
-    fn viewer_zooms_to_given_object_size() {
-        todo!()
+    fn viewer_zooms_to_largest_dimension_of_object() {
+        let mut viewer = Viewer::new(Vector2D::from([100, 100]));
+        let object = Object {
+            position: Vector3D::from([4.0, -3.0, 1.0]),
+            svg_inst: SVG {
+                dimension: Vector2D::from([10.0, 25.0]),
+                elements: Vec::new(),
+            },
+        };
+
+        viewer.center_on_object(&object);
+
+        assert_eq!(viewer.zoom, 100.0 / 25.0)
     }
 
     #[test]
-    fn viewer_shouldnt_panic_when_object_size_is_zero() {
-        todo!()
+    fn viewer_shouldnt_zoom_infinitely_when_object_size_is_zero() {
+        let mut viewer = new_viewer();
+        let object = Object {
+            position: Vector3D::from([4.0, -3.0, 1.0]),
+            svg_inst: SVG {
+                dimension: Vector2D::from([0.0, 0.0]),
+                elements: Vec::new(),
+            },
+        };
+
+        viewer.center_on_object(&object);
+
+        assert_ne!(viewer.zoom, f64::INFINITY)
     }
 
     #[test]
     fn viewer_centers_itself_on_position_to_move_to() {
-        todo!()
+        let mut viewer = new_viewer();
+        let new_center = Vector2D::from([5.0, -5.0]);
+
+        viewer.move_to(new_center.clone());
+
+        assert_eq!(viewer.center, new_center);
     }
 
     #[test]
-    fn viewer_moves_by_amount_specified_multiplied_by_zoom() {
-        todo!()
+    fn viewer_moves_by_amount_specified_divided_by_zoom() {
+        const ZOOM_AMOUNT: f64 = 5.0;
+        let delta_position = Vector2D::from([5.0, -5.0]);
+
+        let mut viewer = new_viewer();
+        viewer.zoom_to(ZOOM_AMOUNT);
+
+        viewer.move_by(delta_position.clone());
+        let center_after_move = viewer.center.clone();
+
+        assert_eq!(delta_position * (1.0 / ZOOM_AMOUNT), center_after_move);
     }
 }
