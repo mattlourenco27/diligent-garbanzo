@@ -112,12 +112,22 @@ impl<T, const SIZE: usize> core::ops::Neg for StaticVector<T, SIZE>
 where
     T: Copy + core::ops::Neg<Output = T>,
 {
-    type Output = Self;
+    type Output = StaticVector<T, SIZE>;
     fn neg(mut self) -> Self::Output {
         for item in self.0.iter_mut() {
             *item = -*item;
         }
         self
+    }
+}
+
+impl<T, const SIZE: usize> core::ops::Neg for &StaticVector<T, SIZE>
+where
+    T: Copy + core::ops::Neg<Output = T>,
+{
+    type Output = StaticVector<T, SIZE>;
+    fn neg(self) -> Self::Output {
+        -self.clone()
     }
 }
 
