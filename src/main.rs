@@ -1,11 +1,20 @@
-use std::ffi::OsString;
-use std::{env, path::PathBuf};
+use std::{
+    env,
+    ffi::OsString,
+    path::PathBuf,
+    sync::mpsc,
+    thread,
+    time::{Duration, Instant},
+};
 
-use drawsvg::objects::ObjectMgr;
-use drawsvg::render::CanvasRenderer;
-use drawsvg::vector::Vector2D;
-use drawsvg::{objects::svg, sdl_wrapper::SDLContext};
 use sdl2::event::Event;
+
+use drawsvg::{
+    objects::{svg, ObjectMgr},
+    render::CanvasRenderer,
+    sdl_wrapper::SDLContext,
+    vector::Vector2D,
+};
 
 struct Args {
     svg_path: PathBuf,
@@ -24,6 +33,17 @@ fn parse_args() -> Option<Args> {
 
     return Some(Args {
         svg_path: PathBuf::from(args.into_iter().nth(1).unwrap()),
+    });
+}
+
+fn wait_for_duration(tx: mpsc::Sender<Duration>, duration: Duration) {
+    thread::spawn(move || {
+        let start_time = Instant::now();
+        thread::sleep(duration);
+        match tx.send(Instant::now().duration_since(start_time)) {
+            Ok(_) => (),
+            Err(_) => (),
+        };
     });
 }
 
@@ -73,6 +93,8 @@ fn main() {
         .center_on_object(object_mgr.get_objects().get(0).unwrap());
 
     let mut frames = 0 as u32;
+    let (tx, rx) = mpsc::channel();
+    wait_for_duration(tx.clone(), Duration::from_secs(5));
 
     'running: loop {
         for event in sdl_context.event_pump.poll_iter() {
@@ -107,7 +129,17 @@ fn main() {
         renderer.present();
 
         frames += 1;
-    }
 
-    println!("There were {} frames", frames);
+        match rx.try_recv() {
+            Ok(time_elapsed) => {
+                println!(
+                    "Roughly 5 secs have passed. {} fps",
+                    frames as f64 / time_elapsed.as_millis() as f64 * 1000.0
+                );
+                frames = 0;
+                wait_for_duration(tx.clone(), Duration::from_secs(5));
+            }
+            Err(_) => (),
+        }
+    }
 }
