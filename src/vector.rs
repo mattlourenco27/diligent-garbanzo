@@ -1,4 +1,4 @@
-use num_traits::{ConstZero, Float, Zero};
+use num_traits::{ConstZero, Float, One, Zero};
 
 use crate::matrix::StaticMatrix;
 
@@ -60,6 +60,21 @@ impl<T, const SIZE: usize> StaticVector<T, SIZE> {
         ret.normalize()?;
 
         Ok(ret)
+    }
+
+    /// Extends or clips the given vector to be of length SIZE.
+    ///
+    /// When extending the vector the empty spaces are initialized with T::one().
+    pub fn from_vector<const R_SIZE: usize>(vector: &StaticVector<T, R_SIZE>) -> Self
+    where
+        T: Copy + One,
+    {
+        let mut ret = [T::one(); SIZE];
+        for (l_item, r_item) in ret.iter_mut().zip(vector.0.iter()) {
+            *l_item = *r_item;
+        }
+
+        Self(ret)
     }
 }
 
@@ -131,16 +146,20 @@ where
     }
 }
 
-impl<T, const SIZE: usize> core::ops::Index<usize> for StaticVector<T, SIZE> {
-    type Output = T;
-    fn index(&self, i: usize) -> &Self::Output {
-        &self.0[i]
+impl<T, I: std::slice::SliceIndex<[T]>, const SIZE: usize> core::ops::Index<I>
+    for StaticVector<T, SIZE>
+{
+    type Output = I::Output;
+    fn index(&self, index: I) -> &Self::Output {
+        &self.0[index]
     }
 }
 
-impl<T, const SIZE: usize> core::ops::IndexMut<usize> for StaticVector<T, SIZE> {
-    fn index_mut(&mut self, i: usize) -> &mut Self::Output {
-        &mut self.0[i]
+impl<T, I: std::slice::SliceIndex<[T]>, const SIZE: usize> core::ops::IndexMut<I>
+    for StaticVector<T, SIZE>
+{
+    fn index_mut(&mut self, index: I) -> &mut Self::Output {
+        &mut self.0[index]
     }
 }
 
@@ -482,6 +501,20 @@ mod tests {
             .iter()
             .zip(vec_result.0.iter())
             .all(|(&expected, &result)| (expected - result).abs() < eps)
+    }
+
+    #[test]
+    fn vector_from_longer_vector() {
+        let long_vecter = StaticVector::from([1, 3, 6, 3, 7]);
+        let short_vector = StaticVector::from_vector(&long_vecter);
+        assert_eq!(short_vector, StaticVector::from([1, 3, 6]));
+    }
+
+    #[test]
+    fn vector_from_shorter_vector() {
+        let short_vecter = StaticVector::from([1, 3]);
+        let long_vector = StaticVector::from_vector(&short_vecter);
+        assert_eq!(long_vector, StaticVector::from([1, 3, 1, 1, 1]));
     }
 
     #[test]
