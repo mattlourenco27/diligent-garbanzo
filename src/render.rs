@@ -2,7 +2,7 @@ use sdl2::{pixels::Color, render::WindowCanvas, video::Window, IntegerOrSdlError
 
 use crate::{
     objects::{
-        svg::{Element, EmptyTag, Point, StartTag, SVG},
+        svg::{Element, EmptyTag, Line, Point, StartTag, SVG},
         ObjectMgr,
     },
     vector::Vector2D,
@@ -69,7 +69,7 @@ impl<'a> CanvasRenderer<'a> {
         match empty_tag {
             EmptyTag::Ellipse(_ellipse) => unimplemented!(),
             EmptyTag::Image(_image) => unimplemented!(),
-            EmptyTag::Line(_line) => unimplemented!(),
+            EmptyTag::Line(line) => self.render_line(line),
             EmptyTag::Point(point) => self.render_point(point),
             EmptyTag::Polygon(_polygon) => unimplemented!(),
             EmptyTag::Polyline(_polyline) => unimplemented!(),
@@ -82,10 +82,23 @@ impl<'a> CanvasRenderer<'a> {
 
         let draw_position = self.viewer.norm_to_viewer(&point.position);
         self.canvas
-            .draw_point(sdl2::rect::Point::new(
-                draw_position[0] as i32,
-                draw_position[1] as i32,
+            .draw_fpoint(sdl2::rect::FPoint::new(
+                draw_position[0] as f32,
+                draw_position[1] as f32,
             ))
+            .unwrap();
+    }
+
+    fn render_line(&mut self, line: &Line) {
+        self.canvas.set_draw_color(line.style.fill_color);
+
+        let from_position = self.viewer.norm_to_viewer(&line.from);
+        let to_position = self.viewer.norm_to_viewer(&line.to);
+        self.canvas
+            .draw_fline(
+                sdl2::rect::FPoint::new(from_position[0] as f32, from_position[1] as f32),
+                sdl2::rect::FPoint::new(to_position[0] as f32, to_position[1] as f32),
+            )
             .unwrap();
     }
 }
