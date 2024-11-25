@@ -6,21 +6,25 @@ use sdl2::event::Event;
 const VERTEX_SHADER: &CStr = c"#version 150 core
 
 in vec2 position;
+in vec3 color;
+
+out vec3 Color;
 
 void main()
 {
+    Color = color;
     gl_Position = vec4(position, 0.0, 1.0);
 }";
 
 const FRAGMENT_SHADER: &CStr = c"#version 150 core
 
-uniform vec3 triangleColor;
+in vec3 Color;
 
 out vec4 outColor;
 
 void main()
 {
-    outColor = vec4(triangleColor, 1.0);
+    outColor = vec4(Color, 1.0);
 }";
 
 fn main() {
@@ -45,9 +49,11 @@ fn main() {
     let fragment_shader: gl::types::GLuint;
     let mut vao: gl::types::GLuint = 0; // Vertex array object index
     let mut vbo: gl::types::GLuint = 0; // Vertex buffer object index
-    let vertices: [f32; 6] = [0.0, 0.5, 0.5, -0.5, -0.5, -0.5];
-
-    let uni_color: gl::types::GLint;
+    let vertices: [f32; 15] = [
+        0.0, 0.5, 1.0, 0.0, 0.0,
+        0.5, -0.5, 0.0, 1.0, 0.0,
+        -0.5, -0.5, 0.0, 0.0, 1.0,
+    ];
 
     unsafe {
         println!("Creating a vertex array object to save array settings to");
@@ -61,7 +67,7 @@ fn main() {
         gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
         gl::BufferData(
             gl::ARRAY_BUFFER,
-            std::mem::size_of::<[f32; 6]>() as gl::types::GLsizeiptr,
+            std::mem::size_of_val(&vertices) as gl::types::GLsizeiptr,
             vertices.as_ptr() as *const c_void,
             gl::STATIC_DRAW,
         );
@@ -174,41 +180,45 @@ fn main() {
             c"position".as_ptr(),
         );
 
-        let error = gl::GetError();
-        if error != gl::NO_ERROR {
-            println!("Error while getting attribute index of 'position': {error}");
-        }
-
-        println!("Attribute location is {position_attribute}");
+        gl::EnableVertexAttribArray(position_attribute as gl::types::GLuint);
 
         gl::VertexAttribPointer(
             position_attribute as gl::types::GLuint,
             2,
             gl::FLOAT,
             gl::FALSE,
-            0,
+            5 * std::mem::size_of::<f32>() as gl::types::GLsizei,
             std::ptr::null(),
         );
 
         let error = gl::GetError();
         if error != gl::NO_ERROR {
-            println!("Error while assigning attributes to 'position': {error}");
+            println!("{error}");
         }
 
-        gl::EnableVertexAttribArray(position_attribute as gl::types::GLuint);
+        let color_attribute = gl::GetAttribLocation(
+            shader_program,
+            c"color".as_ptr(),
+        );
+
+        gl::EnableVertexAttribArray(color_attribute as gl::types::GLuint);
+
+        gl::VertexAttribPointer(
+            color_attribute as gl::types::GLuint,
+            3,
+            gl::FLOAT,
+            gl::FALSE,
+            5 * std::mem::size_of::<f32>() as gl::types::GLsizei,
+            (2 * std::mem::size_of::<f32>()) as *const c_void,
+        );
 
         let error = gl::GetError();
         if error != gl::NO_ERROR {
-            println!("Error while enabling attributes of 'position': {error}");
+            println!("{error}");
         }
-
-        println!("Retrieving the index of the uniform 'triangleColor'");
-
-        uni_color = gl::GetUniformLocation(shader_program, c"triangleColor".as_ptr());
     }
 
     let mut frames = 0 as u32;
-    let start_time = std::time::Instant::now();
 
     'running: loop {
         for event in sdl_context.event_pump.poll_iter() {
@@ -218,12 +228,7 @@ fn main() {
             }
         }
 
-        let elapsed_time = std::time::Instant::now().duration_since(start_time);
-        let red_value = ((elapsed_time.as_millis() as f32 * 0.005).sin() + 1.0) / 2.0;
-
         unsafe {
-            gl::Uniform3f(uni_color, red_value, 0.0, 0.0);
-
             gl::ClearColor(0.6, 0.0, 0.8, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT);
 
