@@ -14,11 +14,13 @@ void main()
 
 const FRAGMENT_SHADER: &CStr = c"#version 150 core
 
+uniform vec3 triangleColor;
+
 out vec4 outColor;
 
 void main()
 {
-    outColor = vec4(1.0, 1.0, 1.0, 1.0);
+    outColor = vec4(triangleColor, 1.0);
 }";
 
 fn main() {
@@ -44,6 +46,8 @@ fn main() {
     let mut vao: gl::types::GLuint = 0; // Vertex array object index
     let mut vbo: gl::types::GLuint = 0; // Vertex buffer object index
     let vertices: [f32; 6] = [0.0, 0.5, 0.5, -0.5, -0.5, -0.5];
+
+    let uni_color: gl::types::GLint;
 
     unsafe {
         println!("Creating a vertex array object to save array settings to");
@@ -137,7 +141,7 @@ fn main() {
         gl::BindFragDataLocation(
             shader_program,
             0,
-            c"outColor".as_ptr() as *const gl::types::GLchar,
+            c"outColor".as_ptr(),
         );
 
         let error = gl::GetError();
@@ -167,7 +171,7 @@ fn main() {
 
         let position_attribute = gl::GetAttribLocation(
             shader_program,
-            c"position".as_ptr() as *const gl::types::GLchar,
+            c"position".as_ptr(),
         );
 
         let error = gl::GetError();
@@ -197,9 +201,14 @@ fn main() {
         if error != gl::NO_ERROR {
             println!("Error while enabling attributes of 'position': {error}");
         }
+
+        println!("Retrieving the index of the uniform 'triangleColor'");
+
+        uni_color = gl::GetUniformLocation(shader_program, c"triangleColor".as_ptr());
     }
 
     let mut frames = 0 as u32;
+    let start_time = std::time::Instant::now();
 
     'running: loop {
         for event in sdl_context.event_pump.poll_iter() {
@@ -209,7 +218,12 @@ fn main() {
             }
         }
 
+        let elapsed_time = std::time::Instant::now().duration_since(start_time);
+        let red_value = ((elapsed_time.as_millis() as f32 * 0.005).sin() + 1.0) / 2.0;
+
         unsafe {
+            gl::Uniform3f(uni_color, red_value, 0.0, 0.0);
+
             gl::ClearColor(0.6, 0.0, 0.8, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT);
 
@@ -221,6 +235,8 @@ fn main() {
         frames += 1;
     }
 
+    println!("There were {} frames", frames);
+
     unsafe {
         gl::DeleteProgram(shader_program);
         gl::DeleteShader(fragment_shader);
@@ -230,6 +246,4 @@ fn main() {
 
         gl::DeleteVertexArrays(1, &mut vao);
     }
-
-    println!("There were {} frames", frames);
 }
