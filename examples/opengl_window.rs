@@ -49,10 +49,17 @@ fn main() {
     let fragment_shader: gl::types::GLuint;
     let mut vao: gl::types::GLuint = 0; // Vertex array object index
     let mut vbo: gl::types::GLuint = 0; // Vertex buffer object index
-    let vertices: [f32; 15] = [
-        0.0, 0.5, 1.0, 0.0, 0.0,
-        0.5, -0.5, 0.0, 1.0, 0.0,
-        -0.5, -0.5, 0.0, 0.0, 1.0,
+    let vertices: [f32; 20] = [
+        -0.5,  0.5, 1.0, 0.0, 0.0, // Top-left
+        0.5,  0.5, 0.0, 1.0, 0.0, // Top-right
+        0.5, -0.5, 0.0, 0.0, 1.0, // Bottom-right
+        -0.5, -0.5, 1.0, 1.0, 1.0, // Bottom-left
+    ];
+
+    let mut ebo: gl::types::GLuint = 0; // Element buffer object index
+    let elements: [gl::types::GLuint; 6] = [
+        0, 1, 2,
+        2, 3, 0
     ];
 
     unsafe {
@@ -69,6 +76,17 @@ fn main() {
             gl::ARRAY_BUFFER,
             std::mem::size_of_val(&vertices) as gl::types::GLsizeiptr,
             vertices.as_ptr() as *const c_void,
+            gl::STATIC_DRAW,
+        );
+
+        println!("Creating element buffer");
+
+        gl::GenBuffers(1, &mut ebo);
+        gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, ebo);
+        gl::BufferData(
+            gl::ELEMENT_ARRAY_BUFFER,
+            std::mem::size_of_val(&elements) as gl::types::GLsizeiptr,
+            elements.as_ptr() as *const c_void,
             gl::STATIC_DRAW,
         );
 
@@ -144,11 +162,7 @@ fn main() {
         println!("Binding the fragment shader to the right framebuffer");
 
         // Technically this is not needed because it is 0 by default.
-        gl::BindFragDataLocation(
-            shader_program,
-            0,
-            c"outColor".as_ptr(),
-        );
+        gl::BindFragDataLocation(shader_program, 0, c"outColor".as_ptr());
 
         let error = gl::GetError();
         if error != gl::NO_ERROR {
@@ -175,10 +189,7 @@ fn main() {
 
         println!("Defining vertex attribute format");
 
-        let position_attribute = gl::GetAttribLocation(
-            shader_program,
-            c"position".as_ptr(),
-        );
+        let position_attribute = gl::GetAttribLocation(shader_program, c"position".as_ptr());
 
         gl::EnableVertexAttribArray(position_attribute as gl::types::GLuint);
 
@@ -196,10 +207,7 @@ fn main() {
             println!("{error}");
         }
 
-        let color_attribute = gl::GetAttribLocation(
-            shader_program,
-            c"color".as_ptr(),
-        );
+        let color_attribute = gl::GetAttribLocation(shader_program, c"color".as_ptr());
 
         gl::EnableVertexAttribArray(color_attribute as gl::types::GLuint);
 
@@ -232,7 +240,7 @@ fn main() {
             gl::ClearColor(0.6, 0.0, 0.8, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT);
 
-            gl::DrawArrays(gl::TRIANGLES, 0, 3);
+            gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, std::ptr::null());
         }
 
         window.gl_swap_window();
@@ -247,6 +255,7 @@ fn main() {
         gl::DeleteShader(fragment_shader);
         gl::DeleteShader(vertex_shader);
 
+        gl::DeleteBuffers(1, &mut ebo);
         gl::DeleteBuffers(1, &mut vbo);
 
         gl::DeleteVertexArrays(1, &mut vao);
