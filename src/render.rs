@@ -1,4 +1,4 @@
-use sdl2::{pixels::Color, render::WindowCanvas, video::Window, IntegerOrSdlError};
+use sdl2::{pixels::Color, render::WindowCanvas, video::{GLContext, Window}, IntegerOrSdlError};
 
 use crate::{
     objects::{
@@ -100,5 +100,43 @@ impl<'a> CanvasRenderer<'a> {
                 sdl2::rect::FPoint::new(to_position[0] as f32, to_position[1] as f32),
             )
             .unwrap();
+    }
+}
+
+pub struct GLRenderer {
+    window: Window,
+    _gl_ctx: GLContext,
+    pub viewer: Viewer,
+}
+
+impl GLRenderer {
+    pub fn new(window: Window, gl_ctx: GLContext, object_mgr: &ObjectMgr) -> Self {
+        let window_size: [u32; 2] = window.size().into();
+        let gl_renderer = Self {
+            window,
+            _gl_ctx: gl_ctx,
+            viewer: Viewer::new(Vector2D::from(window_size)),
+        };
+
+        // Load all of the object_mgr's object vertices onto the gpu
+
+        gl_renderer
+    }
+
+    pub fn clear(&mut self) {
+        unsafe {
+            gl::ClearColor(1.0, 1.0, 1.0, 1.0);
+            gl::Clear(gl::COLOR_BUFFER_BIT);
+        }
+    }
+
+    pub fn render_objects(&mut self) {
+        // update uniform controlling the viewer transform (if necessary? Maybe do that only when it updates?)
+
+        // draw vertices
+    }
+
+    pub fn present(&mut self) {
+        self.window.gl_swap_window();
     }
 }
