@@ -1,6 +1,6 @@
 use core::ffi::{c_void, CStr};
 
-use gl::types::{GLchar, GLenum, GLint, GLuint};
+use gl::types::{GLchar, GLenum, GLint, GLsizei, GLuint};
 use sdl2::{
     pixels::Color,
     video::{GLContext, Window},
@@ -373,6 +373,7 @@ impl VertexExtractor {
 struct VertexArray {
     array_index: GLuint,
     buffer_index: GLuint,
+    data_types: Vec<(GLenum, u32)>,
 }
 
 impl VertexArray {
@@ -382,6 +383,7 @@ impl VertexArray {
         let mut vertex_array = Self {
             array_index: 0,
             buffer_index: 0,
+            data_types: vertices.data_types,
         };
 
         unsafe {
@@ -401,9 +403,15 @@ impl VertexArray {
         vertex_array
     }
 
-    fn enable(&self) {
+    fn render(&self) {
         unsafe {
             gl::BindVertexArray(self.array_index);
+
+            let mut total_drawn: u32 = 0;
+            for (data_type, count) in self.data_types.iter() {
+                gl::DrawArrays(*data_type, total_drawn as GLint, *count as GLsizei);
+                total_drawn += *count;
+            }
         }
     }
 }
@@ -468,6 +476,6 @@ impl Renderer {
     }
 
     fn render_object(&self, vertex_array: &VertexArray) {
-        vertex_array.enable();
+        vertex_array.render();
     }
 }
