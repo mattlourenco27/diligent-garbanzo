@@ -4,7 +4,7 @@ use sdl2::event::Event;
 
 use drawsvg::{
     objects::{svg, ObjectMgr},
-    render::CanvasRenderer,
+    render::{canvas, gl},
     sdl_wrapper::SDLContext,
     tools::FpsCounter,
     vector::Vector2D,
@@ -63,7 +63,7 @@ fn main() {
         }
     };
 
-    let mut renderer = match CanvasRenderer::new(window, &object_mgr) {
+    let mut renderer = match canvas::Renderer::new(window, &object_mgr) {
         Ok(renderer) => renderer,
         Err(err) => {
             println!("Error while building a renderer: {}", err);

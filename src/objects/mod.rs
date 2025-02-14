@@ -5,7 +5,7 @@ use crate::vector::Vector3D;
 pub mod svg;
 
 pub struct Object {
-    pub position: Vector3D<f64>,
+    pub position: Vector3D<f32>,
     pub svg_inst: SVG,
 }
 

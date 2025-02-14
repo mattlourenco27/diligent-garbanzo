@@ -15,6 +15,8 @@ use sdl2::pixels::Color;
 
 use crate::{matrix::Matrix3x3, texture::Texture, vector::Vector2D};
 
+pub type Transform = Matrix3x3<f32>;
+
 #[derive(Debug)]
 pub enum ReadError {
     EndTagBeforeStart,
@@ -253,8 +255,8 @@ impl<'a> Attribute<'a> {
         Style::COLOR_NONE
     }
 
-    fn length(&self) -> Result<f64, ReadError> {
-        const SUPPORTED_UNITS: [(&str, f64); 7] = [
+    fn length(&self) -> Result<f32, ReadError> {
+        const SUPPORTED_UNITS: [(&str, f32); 7] = [
             ("cm", 9600.0 / 254.0),
             ("mm", 960.0 / 254.0),
             ("Q", 240.0 / 254.0),
@@ -277,18 +279,18 @@ impl<'a> Attribute<'a> {
                 }
             }
         }
-        Ok(f64::from_str(numeric_str)? * modifier)
+        Ok(f32::from_str(numeric_str)? * modifier)
     }
 
-    fn parse_number(raw_str: &str) -> Result<f64, ParseFloatError> {
-        Ok(f64::from_str(raw_str.trim())?)
+    fn parse_number(raw_str: &str) -> Result<f32, ParseFloatError> {
+        Ok(f32::from_str(raw_str.trim())?)
     }
 
-    fn number(&self) -> Result<f64, ParseFloatError> {
+    fn number(&self) -> Result<f32, ParseFloatError> {
         Attribute::parse_number(self.value.as_ref())
     }
 
-    fn parse_number_list(raw_str: &str) -> Result<Vec<f64>, ParseFloatError> {
+    fn parse_number_list(raw_str: &str) -> Result<Vec<f32>, ParseFloatError> {
         static RE: sync::Lazy<Regex> =
             sync::Lazy::new(|| Regex::new(r"[,\s]+").expect("Invalid Regex"));
 
@@ -302,11 +304,11 @@ impl<'a> Attribute<'a> {
         Ok(numbers)
     }
 
-    fn number_list(&self) -> Result<Vec<f64>, ParseFloatError> {
+    fn number_list(&self) -> Result<Vec<f32>, ParseFloatError> {
         Attribute::parse_number_list(self.value.as_ref())
     }
 
-    fn point_list(&self) -> Result<Vec<Vector2D<f64>>, ReadError> {
+    fn point_list(&self) -> Result<Vec<Vector2D<f32>>, ReadError> {
         let mut points = Vec::new();
 
         let mut x = 0.0;
@@ -326,13 +328,13 @@ impl<'a> Attribute<'a> {
     // This implements the SVG transformation specification. All the SVG
     // transformations are supported as documented in the link below:
     // https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/transform
-    fn transform_list(&self) -> Result<Matrix3x3<f64>, ParseFloatError> {
-        const DEG_TO_RAD: f64 = core::f64::consts::PI / 180.0;
+    fn transform_list(&self) -> Result<Transform, ParseFloatError> {
+        const DEG_TO_RAD: f32 = core::f32::consts::PI / 180.0;
 
         static RE: sync::Lazy<Regex> =
             sync::Lazy::new(|| Regex::new(r"\)[,\s]*").expect("Invalid Regex"));
 
-        let mut final_transform = Matrix3x3::identity();
+        let mut final_transform = Matrix3x3::IDENTITY3X3;
 
         for transform_str in RE.split(self.value.as_ref()) {
             let (transform_type, values) = match transform_str.split_once('(') {
@@ -342,7 +344,7 @@ impl<'a> Attribute<'a> {
 
             let numbers = Attribute::parse_number_list(values)?;
 
-            let transform: Matrix3x3<f64> = match transform_type {
+            let transform: Transform = match transform_type {
                 "matrix" => {
                     if numbers.len() != 6 {
                         continue;
@@ -377,11 +379,11 @@ impl<'a> Attribute<'a> {
                     let a = numbers[0] * DEG_TO_RAD;
                     let x = *numbers.get(1).unwrap_or(&0.0);
                     let y = *numbers.get(2).unwrap_or(&0.0);
-                    let cx = -x * f64::cos(a) + y * f64::sin(a) + x;
-                    let cy = -x * f64::sin(a) - y * f64::cos(a) + y;
+                    let cx = -x * f32::cos(a) + y * f32::sin(a) + x;
+                    let cy = -x * f32::sin(a) - y * f32::cos(a) + y;
                     [
-                        [f64::cos(a), -f64::sin(a), cx],
-                        [f64::sin(a), f64::cos(a), cy],
+                        [f32::cos(a), -f32::sin(a), cx],
+                        [f32::sin(a), f32::cos(a), cy],
                         [0.0, 0.0, 1.0],
                     ]
                     .into()
@@ -391,14 +393,14 @@ impl<'a> Attribute<'a> {
                         continue;
                     }
                     let a = numbers[0] * DEG_TO_RAD;
-                    [[1.0, f64::tan(a), 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]].into()
+                    [[1.0, f32::tan(a), 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]].into()
                 }
                 "skewY" => {
                     if numbers.len() != 1 {
                         continue;
                     }
                     let a = numbers[0] * DEG_TO_RAD;
-                    [[1.0, 0.0, 0.0], [f64::tan(a), 1.0, 0.0], [0.0, 0.0, 1.0]].into()
+                    [[1.0, 0.0, 0.0], [f32::tan(a), 1.0, 0.0], [0.0, 0.0, 1.0]].into()
                 }
                 _ => continue,
             };
@@ -413,7 +415,7 @@ impl<'a> Attribute<'a> {
 #[derive(Debug)]
 pub struct Point {
     pub style: Style,
-    pub position: Vector2D<f64>,
+    pub position: Vector2D<f32>,
 }
 
 impl Point {
@@ -442,8 +444,8 @@ impl Point {
 #[derive(Debug)]
 pub struct Line {
     pub style: Style,
-    pub from: Vector2D<f64>,
-    pub to: Vector2D<f64>,
+    pub from: Vector2D<f32>,
+    pub to: Vector2D<f32>,
 }
 
 impl Line {
@@ -477,7 +479,7 @@ impl Line {
 #[derive(Debug)]
 pub struct Polyline {
     pub style: Style,
-    pub points: Vec<Vector2D<f64>>,
+    pub points: Vec<Vector2D<f32>>,
 }
 
 impl Polyline {
@@ -501,9 +503,9 @@ impl Polyline {
 #[derive(Debug)]
 pub struct Rect {
     pub style: Style,
-    pub position: Vector2D<f64>,
-    pub dimension: Vector2D<f64>,
-    pub corners: Vector2D<f64>,
+    pub position: Vector2D<f32>,
+    pub dimension: Vector2D<f32>,
+    pub corners: Vector2D<f32>,
 }
 
 impl Rect {
@@ -549,7 +551,7 @@ impl Rect {
 #[derive(Debug)]
 pub struct Polygon {
     pub style: Style,
-    pub points: Vec<Vector2D<f64>>,
+    pub points: Vec<Vector2D<f32>>,
 }
 
 impl Polygon {
@@ -573,8 +575,8 @@ impl Polygon {
 #[derive(Debug)]
 pub struct Ellipse {
     pub style: Style,
-    pub center: Vector2D<f64>,
-    pub radius: Vector2D<f64>,
+    pub center: Vector2D<f32>,
+    pub radius: Vector2D<f32>,
 }
 
 impl Ellipse {
@@ -608,8 +610,8 @@ impl Ellipse {
 #[derive(Debug)]
 pub struct Image {
     pub style: Style,
-    pub position: Vector2D<f64>,
-    pub dimension: Vector2D<f64>,
+    pub position: Vector2D<f32>,
+    pub dimension: Vector2D<f32>,
     pub texture: Texture,
 }
 
@@ -632,7 +634,7 @@ impl Group {
 
 #[derive(Debug)]
 pub struct SVG {
-    pub dimension: Vector2D<f64>,
+    pub dimension: Vector2D<f32>,
     pub elements: Vec<Element>,
 }
 
@@ -661,9 +663,9 @@ impl SVG {
 pub struct Style {
     pub stroke_color: Color,
     pub fill_color: Color,
-    pub stroke_width: f64,
-    pub miter_limit: f64,
-    pub transform: Matrix3x3<f64>,
+    pub stroke_width: f32,
+    pub miter_limit: f32,
+    pub transform: Transform,
 }
 
 impl Style {
@@ -681,7 +683,7 @@ impl Style {
         attributes: quick_xml::events::attributes::Attributes,
         mut parent_style: Style,
     ) -> Result<Self, ReadError> {
-        const FLOAT_TO_8BIT: f64 = core::u8::MAX as f64;
+        const FLOAT_TO_8BIT: f32 = core::u8::MAX as f32;
         for attribute in attributes {
             let attribute = Attribute::parse(attribute?)?;
             match attribute.key {

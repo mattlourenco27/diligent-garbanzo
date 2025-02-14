@@ -8,15 +8,15 @@ use crate::{
 
 pub struct Viewer {
     window_size: Vector2D<u32>,
-    center: Vector2D<f64>,
-    zoom: f64,
-    norm_to_self_transform: Matrix3x3<f64>,
+    center: Vector2D<f32>,
+    zoom: f32,
+    norm_to_self_transform: Matrix3x3<f32>,
 }
 
 impl Viewer {
     pub fn new(window_size: Vector2D<u32>) -> Self {
-        const DEFAULT_CENTER: Vector2D<f64> = Vector2D::ZERO;
-        const DEFAULT_ZOOM: f64 = 1.0;
+        const DEFAULT_CENTER: Vector2D<f32> = Vector2D::ZERO;
+        const DEFAULT_ZOOM: f32 = 1.0;
         Self {
             center: DEFAULT_CENTER,
             zoom: DEFAULT_ZOOM,
@@ -34,8 +34,8 @@ impl Viewer {
         self.center[0] = object.position[0] + object_radius[0];
         self.center[1] = object.position[1] + object_radius[1];
 
-        let zoom_x = self.window_size[0] as f64 / object.svg_inst.dimension[0];
-        let zoom_y = self.window_size[1] as f64 / object.svg_inst.dimension[1];
+        let zoom_x = self.window_size[0] as f32 / object.svg_inst.dimension[0];
+        let zoom_y = self.window_size[1] as f32 / object.svg_inst.dimension[1];
 
         self.zoom = std::cmp::min_by(zoom_x, zoom_y, |x, y| x.partial_cmp(y).unwrap());
 
@@ -46,36 +46,36 @@ impl Viewer {
         self.update_norm_to_self_transform();
     }
 
-    pub fn move_to(&mut self, new_center: Vector2D<f64>) {
+    pub fn move_to(&mut self, new_center: Vector2D<f32>) {
         self.center = new_center;
         self.update_norm_to_self_transform();
     }
 
-    pub fn move_by(&mut self, delta_center: Vector2D<f64>) {
+    pub fn move_by(&mut self, delta_center: Vector2D<f32>) {
         self.center += delta_center * (1.0 / self.zoom);
         self.update_norm_to_self_transform();
     }
 
-    pub fn zoom_to(&mut self, new_zoom: f64) {
+    pub fn zoom_to(&mut self, new_zoom: f32) {
         self.zoom = new_zoom;
         self.update_norm_to_self_transform();
     }
 
-    pub fn zoom_by(&mut self, zoom_modifier: f64) {
+    pub fn zoom_by(&mut self, zoom_modifier: f32) {
         self.zoom *= zoom_modifier;
         self.update_norm_to_self_transform();
     }
 
-    pub fn norm_to_viewer(&self, position: &Vector2D<f64>) -> Vector2D<f64> {
+    pub fn norm_to_viewer(&self, position: &Vector2D<f32>) -> Vector2D<f32> {
         let transformed = Vector3D::from_vector(position) * &self.norm_to_self_transform;
         Vector2D::from_vector(&transformed)
     }
 
     fn generate_norm_to_self_transform(
-        center: &Vector2D<f64>,
-        zoom: f64,
+        center: &Vector2D<f32>,
+        zoom: f32,
         window_size: &Vector2D<u32>,
-    ) -> Matrix3x3<f64> {
+    ) -> Matrix3x3<f32> {
         // Translate to viewer position
         let mut position_matrix = Matrix3x3::IDENTITY3X3;
         position_matrix[2][0] = -center[0];
@@ -88,8 +88,8 @@ impl Viewer {
 
         // Move origin to center of the viewer
         let mut center_matrix = Matrix3x3::IDENTITY3X3;
-        center_matrix[2][0] = window_size[0] as f64 / 2.0;
-        center_matrix[2][1] = window_size[1] as f64 / 2.0;
+        center_matrix[2][0] = window_size[0] as f32 / 2.0;
+        center_matrix[2][1] = window_size[1] as f32 / 2.0;
 
         &position_matrix * &zoom_matrix * &center_matrix
     }
@@ -139,7 +139,7 @@ mod tests {
 
     #[test]
     fn zoom_value_of_1_does_not_change_position_norm() {
-        const ZOOM_AMOUNT: f64 = 1.0;
+        const ZOOM_AMOUNT: f32 = 1.0;
 
         let mut viewer = new_viewer();
         let screen_center = viewer.norm_to_viewer(&viewer.center);
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn zooming_moves_pixels_away_from_the_screen_center_by_the_same_amount() {
-        const ZOOM_AMOUNT: f64 = 3.77;
+        const ZOOM_AMOUNT: f32 = 3.77;
 
         let mut viewer = new_viewer();
         let screen_center = viewer.norm_to_viewer(&viewer.center);
@@ -221,7 +221,7 @@ mod tests {
 
         viewer.center_on_object(&object);
 
-        assert_ne!(viewer.zoom, f64::INFINITY)
+        assert_ne!(viewer.zoom, f32::INFINITY)
     }
 
     #[test]
@@ -236,7 +236,7 @@ mod tests {
 
     #[test]
     fn viewer_moves_by_amount_specified_divided_by_zoom() {
-        const ZOOM_AMOUNT: f64 = 5.0;
+        const ZOOM_AMOUNT: f32 = 5.0;
         let delta_position = Vector2D::from([5.0, -5.0]);
 
         let mut viewer = new_viewer();
