@@ -24,12 +24,15 @@ const VERTEX_SHADER: &CStr = c"#version 150 core
 in vec2 position;
 in vec4 color;
 
+uniform mat3 norm_to_viewer;
+
 out vec4 Color;
 
 void main()
 {
     Color = color;
-    gl_Position = vec4(position, 0.0, 1.0);
+    vec3 transformed_position = vec3(position, 1.0) * norm_to_viewer;
+    gl_Position = vec4(transformed_position.x, -transformed_position.y, 0.0, 1.0);
 }";
 
 const FRAGMENT_SHADER: &CStr = c"#version 150 core
@@ -58,6 +61,7 @@ struct ShadersAndProgram {
     shader_program: GLuint,
     position_attr: GLuint,
     color_attr: GLuint,
+    norm_to_viewer_uniform: GLuint,
 }
 
 impl ShadersAndProgram {
@@ -138,7 +142,7 @@ impl ShadersAndProgram {
         Ok(())
     }
 
-    unsafe fn get_attributes(shader_program: GLuint) -> Result<(GLuint, GLuint), String> {
+    unsafe fn get_attributes(shader_program: GLuint) -> Result<(GLuint, GLuint, GLuint), String> {
         let position_attribute = gl::GetAttribLocation(shader_program, c"position".as_ptr());
 
         maybe_get_gl_error()?;
@@ -147,7 +151,16 @@ impl ShadersAndProgram {
 
         maybe_get_gl_error()?;
 
-        Ok((position_attribute as GLuint, color_attribute as GLuint))
+        let norm_to_viewer_uniform =
+            gl::GetUniformLocation(shader_program, c"norm_to_viewer".as_ptr());
+
+        maybe_get_gl_error()?;
+
+        Ok((
+            position_attribute as GLuint,
+            color_attribute as GLuint,
+            norm_to_viewer_uniform as GLuint,
+        ))
     }
 
     fn build() -> Result<ShadersAndProgram, String> {
@@ -166,7 +179,8 @@ impl ShadersAndProgram {
 
             ShadersAndProgram::activate_program(shader_program)?;
 
-            let (position_attr, color_attr) = ShadersAndProgram::get_attributes(shader_program)?;
+            let (position_attr, color_attr, norm_to_viewer_uniform) =
+                ShadersAndProgram::get_attributes(shader_program)?;
 
             Ok(ShadersAndProgram {
                 vertex_shader,
@@ -174,6 +188,7 @@ impl ShadersAndProgram {
                 shader_program,
                 position_attr,
                 color_attr,
+                norm_to_viewer_uniform,
             })
         }
     }
@@ -209,6 +224,18 @@ impl ShadersAndProgram {
         }
 
         Ok(())
+    }
+
+    fn update_uniform(&self, norm_to_viewer_transform: &Matrix3x3<f32>) {
+        unsafe {
+            gl::UniformMatrix3fv(
+                self.norm_to_viewer_uniform as GLint,
+                1,
+                gl::TRUE,
+                <&Matrix3x3<f32> as Into<&[[f32; 3]; 3]>>::into(norm_to_viewer_transform)[0]
+                    .as_ptr(),
+            );
+        }
     }
 }
 
@@ -394,7 +421,7 @@ impl VertexArray {
             gl::BindBuffer(gl::ARRAY_BUFFER, vertex_array.buffer_index);
             gl::BufferData(
                 gl::ARRAY_BUFFER,
-                std::mem::size_of_val(&vertices.data) as gl::types::GLsizeiptr,
+                (vertices.data.len() * std::mem::size_of::<f32>()) as gl::types::GLsizeiptr,
                 vertices.data.as_ptr() as *const c_void,
                 gl::STATIC_DRAW,
             );
@@ -429,7 +456,7 @@ pub struct Renderer {
     window: Window,
     _gl_ctx: GLContext,
     pub viewer: Viewer,
-    _shaders: ShadersAndProgram,
+    shaders: ShadersAndProgram,
     vertex_arrays: Vec<VertexArray>,
 }
 
@@ -437,19 +464,19 @@ impl Renderer {
     pub fn new(window: Window, gl_ctx: GLContext, object_mgr: &ObjectMgr) -> Result<Self, String> {
         let window_size: [u32; 2] = window.size().into();
 
-        let _shaders = ShadersAndProgram::build()?;
+        let shaders = ShadersAndProgram::build()?;
 
         let mut vertex_arrays = Vec::new();
         for object in object_mgr.get_objects() {
             vertex_arrays.push(VertexArray::from_svg(&object.svg_inst));
-            _shaders.bind_attributes_to_vertex_array()?;
+            shaders.bind_attributes_to_vertex_array()?;
         }
 
         let gl_renderer = Self {
             window,
             _gl_ctx: gl_ctx,
             viewer: Viewer::new(Vector2D::from(window_size)),
-            _shaders,
+            shaders,
             vertex_arrays,
         };
 
@@ -465,6 +492,8 @@ impl Renderer {
 
     pub fn render_objects(&self) {
         // update uniform controlling the viewer transform (if necessary? Maybe do that only when it updates?)
+        self.shaders
+            .update_uniform(self.viewer.get_norm_to_viewer());
 
         for vertex_array in self.vertex_arrays.iter() {
             self.render_object(vertex_array);

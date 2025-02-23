@@ -121,6 +121,18 @@ impl<T, const ROWS: usize, const COLS: usize> From<[[T; COLS]; ROWS]>
     }
 }
 
+impl<T, const ROWS: usize, const COLS: usize> Into<[[T; COLS]; ROWS]> for StaticMatrix<T, ROWS, COLS> {
+    fn into(self) -> [[T; COLS]; ROWS] {
+        self.0
+    }
+}
+
+impl<'a, T, const ROWS: usize, const COLS: usize> Into<&'a [[T; COLS]; ROWS]> for &'a StaticMatrix<T, ROWS, COLS> {
+    fn into(self) -> &'a [[T; COLS]; ROWS] {
+        &self.0
+    }
+}
+
 impl<T, const ROWS: usize, const COLS: usize> ConstZero for StaticMatrix<T, ROWS, COLS>
 where
     T: ConstZero + Copy + PartialEq,

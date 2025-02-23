@@ -34,14 +34,14 @@ impl Viewer {
         self.center[0] = object.position[0] + object_radius[0];
         self.center[1] = object.position[1] + object_radius[1];
 
-        let zoom_x = self.window_size[0] as f32 / object.svg_inst.dimension[0];
-        let zoom_y = self.window_size[1] as f32 / object.svg_inst.dimension[1];
+        // let zoom_x = self.window_size[0] as f32 / object.svg_inst.dimension[0];
+        // let zoom_y = self.window_size[1] as f32 / object.svg_inst.dimension[1];
 
-        self.zoom = std::cmp::min_by(zoom_x, zoom_y, |x, y| x.partial_cmp(y).unwrap());
+        // self.zoom = std::cmp::min_by(zoom_x, zoom_y, |x, y| x.partial_cmp(y).unwrap());
 
-        if self.zoom.is_infinite() {
-            self.zoom = 1.0;
-        }
+        // if self.zoom.is_infinite() {
+        //     self.zoom = 1.0;
+        // }
 
         self.update_norm_to_self_transform();
     }
@@ -71,6 +71,10 @@ impl Viewer {
         Vector2D::from_vector(&transformed)
     }
 
+    pub fn get_norm_to_viewer(&self) -> &Matrix3x3<f32> {
+        &self.norm_to_self_transform
+    }
+
     fn generate_norm_to_self_transform(
         center: &Vector2D<f32>,
         zoom: f32,
@@ -87,11 +91,11 @@ impl Viewer {
         zoom_matrix[1][1] = zoom;
 
         // Move origin to center of the viewer
-        let mut center_matrix = Matrix3x3::IDENTITY3X3;
-        center_matrix[2][0] = window_size[0] as f32 / 2.0;
-        center_matrix[2][1] = window_size[1] as f32 / 2.0;
+        // let mut center_matrix = Matrix3x3::IDENTITY3X3;
+        // center_matrix[2][0] = window_size[0] as f32 / 2.0;
+        // center_matrix[2][1] = window_size[1] as f32 / 2.0;
 
-        &position_matrix * &zoom_matrix * &center_matrix
+        &position_matrix * &zoom_matrix //* &center_matrix
     }
 
     fn update_norm_to_self_transform(&mut self) {
