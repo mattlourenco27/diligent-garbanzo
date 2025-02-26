@@ -454,9 +454,9 @@ impl Drop for VertexArray {
 }
 
 struct GLViewer {
-    window_size: Vector2D<u32>,
     center: Vector2D<f32>,
     zoom: f32,
+    window_width_over_height: f32,
     norm_to_self_transform: Matrix3x3<f32>,
 }
 
@@ -505,14 +505,17 @@ impl GLViewer {
     fn new(window_size: Vector2D<u32>) -> Self {
         const DEFAULT_CENTER: Vector2D<f32> = Vector2D::ZERO;
         const DEFAULT_ZOOM: f32 = 1.0;
+
+        let window_width_over_height = window_size[0] as f32 / window_size[1] as f32;
         Self {
             center: DEFAULT_CENTER,
             zoom: DEFAULT_ZOOM,
             norm_to_self_transform: Self::generate_norm_to_self_transform(
                 &DEFAULT_CENTER,
                 DEFAULT_ZOOM,
+                window_width_over_height,
             ),
-            window_size,
+            window_width_over_height,
         }
     }
 
@@ -525,7 +528,11 @@ impl GLViewer {
         &self.norm_to_self_transform
     }
 
-    fn generate_norm_to_self_transform(center: &Vector2D<f32>, zoom: f32) -> Matrix3x3<f32> {
+    fn generate_norm_to_self_transform(
+        center: &Vector2D<f32>,
+        zoom: f32,
+        width_over_height: f32,
+    ) -> Matrix3x3<f32> {
         // Translate to viewer position
         let mut position_matrix = Matrix3x3::IDENTITY3X3;
         position_matrix[2][0] = -center[0];
@@ -533,15 +540,24 @@ impl GLViewer {
 
         // Zoom the appropriate amount
         let mut zoom_matrix = Matrix3x3::IDENTITY3X3;
-        zoom_matrix[0][0] = zoom;
-        zoom_matrix[1][1] = zoom;
+
+        if width_over_height > 1.0 {
+            zoom_matrix[0][0] = zoom / width_over_height;
+            zoom_matrix[1][1] = zoom;
+        } else {
+            zoom_matrix[0][0] = zoom;
+            zoom_matrix[1][1] = zoom * width_over_height;
+        }
 
         &position_matrix * &zoom_matrix
     }
 
     fn update_norm_to_self_transform(&mut self) {
-        self.norm_to_self_transform =
-            Self::generate_norm_to_self_transform(&self.center, self.zoom);
+        self.norm_to_self_transform = Self::generate_norm_to_self_transform(
+            &self.center,
+            self.zoom,
+            self.window_width_over_height,
+        );
     }
 }
 

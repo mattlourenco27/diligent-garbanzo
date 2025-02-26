@@ -4,7 +4,6 @@ use sdl2::event::Event;
 
 use drawsvg::{
     objects::{svg, ObjectMgr},
-    render::{canvas, gl},
     sdl_wrapper::SDLContext,
     tools::FpsCounter,
     vector::Vector2D,
