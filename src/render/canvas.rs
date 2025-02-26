@@ -7,7 +7,7 @@ use crate::{
         svg::{Element, EmptyTag, Line, Point, StartTag, SVG},
         Object, ObjectMgr,
     },
-    render::viewer::Viewer,
+    render::Viewer,
     vector::{Vector2D, Vector3D},
 };
 
@@ -209,7 +209,7 @@ impl<'a> Renderer<'a> {
 mod tests {
     use crate::{
         objects::{svg::SVG, Object},
-        render::viewer::Viewer,
+        render::Viewer,
         vector::{Vector2D, Vector3D},
     };
 
