@@ -1,4 +1,4 @@
-use std::{env, ffi::OsString, path::PathBuf};
+use std::{env, ffi::OsString, path::PathBuf, time::Instant};
 
 use sdl2::event::Event;
 
@@ -8,6 +8,9 @@ use drawsvg::{
     tools::FpsCounter,
     vector::Vector2D,
 };
+
+const ZOOM_SPEED: f32 = 0.000001;
+const MOVE_SPEED: f32 = 0.000001;
 
 struct Args {
     svg_path: PathBuf,
@@ -69,6 +72,8 @@ fn main() {
     let mut frame_counter = FpsCounter::new();
     frame_counter.begin_measuring();
 
+    let mut frame_start_time = Instant::now();
+    let mut us_of_frame: u128 = 1;
     'running: loop {
         for event in sdl_context.event_pump.poll_iter() {
             match event {
@@ -79,27 +84,34 @@ fn main() {
 
         let keyboard_state = sdl_context.event_pump.keyboard_state();
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::I) {
-            renderer.get_viewer().zoom_by(1.1);
+            renderer.get_viewer().zoom_by(1.0 + ZOOM_SPEED * us_of_frame as f32);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::O) {
-            renderer.get_viewer().zoom_by(1.0 / 1.1);
+            renderer.get_viewer().zoom_by(1.0 - ZOOM_SPEED * us_of_frame as f32);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Left) {
-            renderer.get_viewer().move_by(Vector2D::from([-10.0, 0.0]));
+            renderer.get_viewer().move_by(Vector2D::from([-(MOVE_SPEED * us_of_frame as f32), 0.0]));
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Up) {
-            renderer.get_viewer().move_by(Vector2D::from([0.0, -10.0]));
+            renderer.get_viewer().move_by(Vector2D::from([0.0, -(MOVE_SPEED * us_of_frame as f32)]));
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Right) {
-            renderer.get_viewer().move_by(Vector2D::from([10.0, 0.0]));
+            renderer.get_viewer().move_by(Vector2D::from([(MOVE_SPEED * us_of_frame as f32), 0.0]));
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Down) {
-            renderer.get_viewer().move_by(Vector2D::from([0.0, 10.0]));
+            renderer.get_viewer().move_by(Vector2D::from([0.0, (MOVE_SPEED * us_of_frame as f32)]));
         }
 
         renderer.clear();
         renderer.render_objects();
         renderer.present();
+
+        let frame_end_time = Instant::now();
+        us_of_frame = frame_end_time.duration_since(frame_start_time).as_micros();
+        if us_of_frame == 0 {
+            us_of_frame = 1;
+        }
+        frame_start_time = frame_end_time;
 
         frame_counter.incr_frame_count();
     }
