@@ -1,6 +1,10 @@
 use sdl2::{
-    video::{GLContext, Window, WindowBuildError},
     EventPump, Sdl, VideoSubsystem,
+};
+
+use crate::{
+    objects::ObjectMgr,
+    render::{canvas::CanvasRenderer, gl::GLRenderer, Renderer},
 };
 
 pub struct SDLContext {
@@ -20,13 +24,22 @@ impl SDLContext {
         })
     }
 
-    pub fn build_new_window(
+    pub fn build_new_window<'a>(
         &self,
         title: &str,
         width: u32,
         height: u32,
-    ) -> Result<Window, WindowBuildError> {
-        self.video_subsystem.window(title, width, height).build()
+        object_mgr: &'a ObjectMgr,
+    ) -> Result<Box<dyn Renderer + 'a>, String> {
+        let window = match self.video_subsystem.window(title, width, height).build() {
+            Ok(window) => window,
+            Err(err) => return Err(format!("{err}")),
+        };
+
+        match CanvasRenderer::<'a>::new(window, &object_mgr) {
+            Ok(renderer) => Ok(Box::new(renderer)),
+            Err(err) => Err(format!("{err}")),
+        }
     }
 
     pub fn build_new_gl_window(
@@ -34,12 +47,18 @@ impl SDLContext {
         title: &str,
         width: u32,
         height: u32,
-    ) -> Result<(Window, GLContext), String> {
+        object_mgr: &ObjectMgr,
+    ) -> Result<Box<dyn Renderer>, String> {
         let gl_attr = self.video_subsystem.gl_attr();
         gl_attr.set_context_profile(sdl2::video::GLProfile::Core);
         gl_attr.set_context_version(3, 3);
 
-        let window = match self.video_subsystem.window(title, width, height).opengl().build() {
+        let window = match self
+            .video_subsystem
+            .window(title, width, height)
+            .opengl()
+            .build()
+        {
             Ok(window) => window,
             Err(err) => return Err(format!("{err}")),
         };
@@ -51,6 +70,6 @@ impl SDLContext {
         debug_assert_eq!(gl_attr.context_profile(), sdl2::video::GLProfile::Core);
         debug_assert_eq!(gl_attr.context_version(), (3, 3));
 
-        Ok((window, gl_ctx))
+        Ok(Box::new(GLRenderer::new(window, gl_ctx, &object_mgr)?))
     }
 }

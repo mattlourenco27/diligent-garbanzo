@@ -1,6 +1,6 @@
 use core::ffi::{c_void, CStr};
 
-use drawsvg::sdl_wrapper::SDLContext;
+use drawsvg::{objects::ObjectMgr, sdl_wrapper::SDLContext};
 use sdl2::event::Event;
 
 const VERTEX_SHADER: &CStr = c"#version 150 core
@@ -36,8 +36,9 @@ fn main() {
         }
     };
 
-    let (window, _gl_ctx) = match sdl_context.build_new_gl_window("Example Window", 800, 600) {
-        Ok(window) => window,
+    let object_mgr = ObjectMgr::new();
+    let mut renderer = match sdl_context.build_new_gl_window("Example Window", 800, 600, &object_mgr) {
+        Ok(renderer) => renderer,
         Err(err) => {
             println!("Error while building a new OpenGL window: {}", err);
             return;
@@ -266,7 +267,7 @@ fn main() {
             // gl::DrawArrays(gl::POINTS, 0, 4);
         }
 
-        window.gl_swap_window();
+        renderer.present();
 
         frames += 1;
     }

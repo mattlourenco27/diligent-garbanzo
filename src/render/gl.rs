@@ -13,7 +13,7 @@ use crate::{
         svg::{Element, EmptyTag, Line, Point, StartTag, Style, Transform, SVG},
         Object, ObjectMgr,
     },
-    render::Viewer,
+    render::{Renderer, Viewer},
     vector::{Vector2D, Vector3D},
 };
 
@@ -453,7 +453,7 @@ impl Drop for VertexArray {
     }
 }
 
-pub struct GLViewer {
+struct GLViewer {
     window_size: Vector2D<u32>,
     center: Vector2D<f32>,
     zoom: f32,
@@ -502,7 +502,7 @@ impl Viewer for GLViewer {
 }
 
 impl GLViewer {
-    pub fn new(window_size: Vector2D<u32>) -> Self {
+    fn new(window_size: Vector2D<u32>) -> Self {
         const DEFAULT_CENTER: Vector2D<f32> = Vector2D::ZERO;
         const DEFAULT_ZOOM: f32 = 1.0;
         Self {
@@ -516,12 +516,12 @@ impl GLViewer {
         }
     }
 
-    pub fn norm_to_viewer(&self, position: &Vector2D<f32>) -> Vector2D<f32> {
+    fn norm_to_viewer(&self, position: &Vector2D<f32>) -> Vector2D<f32> {
         let transformed = Vector3D::from_vector(position) * &self.norm_to_self_transform;
         Vector2D::from_vector(&transformed)
     }
 
-    pub fn get_norm_to_viewer(&self) -> &Matrix3x3<f32> {
+    fn get_norm_to_viewer(&self) -> &Matrix3x3<f32> {
         &self.norm_to_self_transform
     }
 
@@ -545,7 +545,7 @@ impl GLViewer {
     }
 }
 
-pub struct Renderer {
+pub struct GLRenderer {
     window: Window,
     _gl_ctx: GLContext,
     viewer: GLViewer,
@@ -553,7 +553,7 @@ pub struct Renderer {
     vertex_arrays: Vec<VertexArray>,
 }
 
-impl Renderer {
+impl GLRenderer {
     pub fn new(window: Window, gl_ctx: GLContext, object_mgr: &ObjectMgr) -> Result<Self, String> {
         let window_size: [u32; 2] = window.size().into();
 
@@ -576,18 +576,24 @@ impl Renderer {
         Ok(gl_renderer)
     }
 
-    pub fn get_viewer(&mut self) -> &mut dyn Viewer {
+    fn render_object(&self, vertex_array: &VertexArray) {
+        vertex_array.render();
+    }
+}
+
+impl Renderer for GLRenderer {
+    fn get_viewer(&mut self) -> &mut dyn Viewer {
         &mut self.viewer
     }
 
-    pub fn clear(&mut self) {
+    fn clear(&mut self) {
         unsafe {
             gl::ClearColor(1.0, 1.0, 1.0, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT);
         }
     }
 
-    pub fn render_objects(&self) {
+    fn render_objects(&mut self) {
         // update uniform controlling the viewer transform (if necessary? Maybe do that only when it updates?)
         self.shaders
             .update_uniform(self.viewer.get_norm_to_viewer());
@@ -597,12 +603,8 @@ impl Renderer {
         }
     }
 
-    pub fn present(&mut self) {
+    fn present(&mut self) {
         self.window.gl_swap_window();
-    }
-
-    fn render_object(&self, vertex_array: &VertexArray) {
-        vertex_array.render();
     }
 }
 

@@ -55,18 +55,10 @@ fn main() {
         }
     };
 
-    let (window, gl_ctx) = match sdl_context.build_new_gl_window("My Window", 800, 100) {
-        Ok(window) => window,
-        Err(err) => {
-            println!("Error while building a new window: {}", err);
-            return;
-        }
-    };
-
-    let mut renderer = match gl::Renderer::new(window, gl_ctx, &object_mgr) {
+    let mut renderer = match sdl_context.build_new_gl_window("My Window", 800, 100, &object_mgr) {
         Ok(renderer) => renderer,
         Err(err) => {
-            println!("Error while building a renderer: {}", err);
+            println!("Error while building a new window: {}", err);
             return;
         }
     };

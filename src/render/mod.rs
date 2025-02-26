@@ -12,3 +12,13 @@ pub trait Viewer {
     fn zoom_to(&mut self, new_zoom: f32);
     fn zoom_by(&mut self, zoom_modifier: f32);
 }
+
+pub trait Renderer {
+    fn get_viewer(&mut self) -> &mut dyn Viewer;
+
+    fn clear(&mut self);
+
+    fn render_objects(&mut self);
+
+    fn present(&mut self);
+}

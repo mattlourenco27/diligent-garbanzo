@@ -7,7 +7,7 @@ use crate::{
         svg::{Element, EmptyTag, Line, Point, StartTag, SVG},
         Object, ObjectMgr,
     },
-    render::Viewer,
+    render::{Renderer, Viewer},
     vector::{Vector2D, Vector3D},
 };
 
@@ -58,7 +58,7 @@ impl Viewer for CanvasViewer {
 }
 
 impl CanvasViewer {
-    pub fn new(window_size: Vector2D<u32>) -> Self {
+    fn new(window_size: Vector2D<u32>) -> Self {
         const DEFAULT_CENTER: Vector2D<f32> = Vector2D::ZERO;
         const DEFAULT_ZOOM: f32 = 1.0;
         Self {
@@ -73,7 +73,7 @@ impl CanvasViewer {
         }
     }
 
-    pub fn norm_to_viewer(&self, position: &Vector2D<f32>) -> Vector2D<f32> {
+    fn norm_to_viewer(&self, position: &Vector2D<f32>) -> Vector2D<f32> {
         let transformed = Vector3D::from_vector(position) * &self.norm_to_self_transform;
         Vector2D::from_vector(&transformed)
     }
@@ -107,13 +107,13 @@ impl CanvasViewer {
     }
 }
 
-pub struct Renderer<'a> {
+pub struct CanvasRenderer<'a> {
     canvas: WindowCanvas,
     object_mgr: &'a ObjectMgr,
     viewer: CanvasViewer,
 }
 
-impl<'a> Renderer<'a> {
+impl<'a> CanvasRenderer<'a> {
     pub fn new(window: Window, object_mgr: &'a ObjectMgr) -> Result<Self, IntegerOrSdlError> {
         let window_size: [u32; 2] = window.size().into();
         Ok(Self {
@@ -121,25 +121,6 @@ impl<'a> Renderer<'a> {
             object_mgr,
             viewer: CanvasViewer::new(Vector2D::from(window_size)),
         })
-    }
-
-    pub fn get_viewer(&mut self) -> &mut dyn Viewer {
-        &mut self.viewer
-    }
-
-    pub fn clear(&mut self) {
-        self.canvas.set_draw_color(Color::WHITE);
-        self.canvas.clear();
-    }
-
-    pub fn render_objects(&mut self) {
-        for object in self.object_mgr.get_objects() {
-            self.render_svg(&object.svg_inst);
-        }
-    }
-
-    pub fn present(&mut self) {
-        self.canvas.present();
     }
 
     fn render_svg(&mut self, svg_object: &SVG) {
@@ -202,6 +183,27 @@ impl<'a> Renderer<'a> {
                 sdl2::rect::FPoint::new(to_position[0] as f32, to_position[1] as f32),
             )
             .unwrap();
+    }
+}
+
+impl<'a> Renderer for CanvasRenderer<'a> {
+    fn get_viewer(&mut self) -> &mut dyn Viewer {
+        &mut self.viewer
+    }
+
+    fn clear(&mut self) {
+        self.canvas.set_draw_color(Color::WHITE);
+        self.canvas.clear();
+    }
+
+    fn render_objects(&mut self) {
+        for object in self.object_mgr.get_objects() {
+            self.render_svg(&object.svg_inst);
+        }
+    }
+
+    fn present(&mut self) {
+        self.canvas.present();
     }
 }
 
