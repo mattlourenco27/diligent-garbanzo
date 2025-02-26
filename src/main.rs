@@ -72,7 +72,7 @@ fn main() {
     };
 
     renderer
-        .viewer
+        .get_viewer()
         .center_on_object(object_mgr.get_objects().get(0).unwrap());
 
     let mut frame_counter = FpsCounter::new();
@@ -88,22 +88,22 @@ fn main() {
 
         let keyboard_state = sdl_context.event_pump.keyboard_state();
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::I) {
-            renderer.viewer.zoom_by(1.1);
+            renderer.get_viewer().zoom_by(1.1);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::O) {
-            renderer.viewer.zoom_by(1.0 / 1.1);
+            renderer.get_viewer().zoom_by(1.0 / 1.1);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Left) {
-            renderer.viewer.move_by(Vector2D::from([-10.0, 0.0]));
+            renderer.get_viewer().move_by(Vector2D::from([-10.0, 0.0]));
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Up) {
-            renderer.viewer.move_by(Vector2D::from([0.0, -10.0]));
+            renderer.get_viewer().move_by(Vector2D::from([0.0, -10.0]));
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Right) {
-            renderer.viewer.move_by(Vector2D::from([10.0, 0.0]));
+            renderer.get_viewer().move_by(Vector2D::from([10.0, 0.0]));
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Down) {
-            renderer.viewer.move_by(Vector2D::from([0.0, 10.0]));
+            renderer.get_viewer().move_by(Vector2D::from([0.0, 10.0]));
         }
 
         renderer.clear();
