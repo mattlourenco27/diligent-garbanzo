@@ -2,6 +2,7 @@ use crate::{objects::Object, vector::Vector2D};
 
 pub mod canvas;
 pub mod gl;
+pub mod triangulation;
 
 pub trait Viewer {
     fn center_on_object(&mut self, object: &Object);
