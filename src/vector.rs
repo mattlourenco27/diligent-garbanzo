@@ -79,16 +79,26 @@ impl<T, const SIZE: usize> StaticVector<T, SIZE> {
 }
 
 impl<T> StaticVector<T, 3> {
-    /// Compute the cross product of two vectors.
-    pub fn cross(lhs: &Self, rhs: &Self) -> Self
+    /// Compute the cross product of two 3D vectors.
+    pub fn cross(&self, other: &Self) -> Self
     where
         T: Float + core::ops::Add<T, Output = T> + core::ops::Mul<T, Output = T>,
     {
         StaticVector([
-            lhs[1] * rhs[2] - lhs[2] * rhs[1],
-            lhs[2] * rhs[0] - lhs[0] * rhs[2],
-            lhs[0] * rhs[1] - lhs[1] * rhs[0],
+            self[1] * other[2] - self[2] * other[1],
+            self[2] * other[0] - self[0] * other[2],
+            self[0] * other[1] - self[1] * other[0],
         ])
+    }
+}
+
+impl<T> StaticVector<T, 2> {
+    /// Compute the cross product of two 2D vectors.
+    pub fn cross(&self, other: &Self) -> T
+    where
+        T: Float + core::ops::Add<T, Output = T> + core::ops::Mul<T, Output = T>,
+    {
+        self[0] * other[1] - self[1] * other[0]
     }
 }
 
@@ -725,12 +735,22 @@ mod tests {
     }
 
     #[test]
-    fn vector_cross() {
+    fn vector_3d_cross() {
         let vec1 = StaticVector([-1.0, -2.0, 3.0]);
         let vec2 = StaticVector([4.0, 0.0, -8.0]);
         assert_eq!(
             StaticVector([16.0, 4.0, 8.0]),
-            StaticVector::cross(&vec1, &vec2)
+            vec1.cross(&vec2)
+        );
+    }
+
+    #[test]
+    fn vector_2d_cross() {
+        let vec1 = StaticVector([-1.0, -2.0]);
+        let vec2 = StaticVector([4.0, 0.0]);
+        assert_eq!(
+            8.0,
+            vec1.cross(&vec2)
         );
     }
 }
