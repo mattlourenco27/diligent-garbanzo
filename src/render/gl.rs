@@ -387,9 +387,9 @@ impl VertexExtractor {
 
         match self.data_types.last_mut() {
             None => self.data_types.push((data_type, num_vertices)),
-            Some(data_type_and_count) => {
-                if data_type_and_count.0 == data_type {
-                    data_type_and_count.1 += num_vertices;
+            Some((last_data_type, last_count)) => {
+                if *last_data_type == data_type {
+                    *last_count += num_vertices;
                 } else {
                     self.data_types.push((data_type, num_vertices));
                 }
