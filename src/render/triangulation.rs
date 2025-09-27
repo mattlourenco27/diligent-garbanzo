@@ -1,4 +1,184 @@
+use std::{collections::BTreeSet, sync::OnceLock};
+
 use crate::vector::Vector2D;
+
+// Imagining that a line splits up the 2D plane into two halves, this enum describes
+// which half a point is in relation to the line, or if the point is exactly on the line.
+#[derive(PartialEq, Debug)]
+enum PointLineRelation {
+    SideA,
+    SideB,
+    Intersection,
+}
+
+// A line can be represented by the equation: ax + by + c = 0
+// where (x0, y0) and (x1, y1) are points on the line, a = (y1 - y0), b = (x0 - x1), and c = - a*x0 - b*y0
+fn get_point_line_relation(p: &Vector2D<f32>, a: f32, b: f32, c: f32) -> PointLineRelation {
+    let p_position = a * p[0] + b * p[1] + c;
+    if p_position == 0.0 {
+        return PointLineRelation::Intersection;
+    }
+
+    if p_position > 0.0 {
+        return PointLineRelation::SideA;
+    }
+
+    PointLineRelation::SideB
+}
+
+// Uses the sweep line algorithm to determine if a polygon is simple (i.e. does not intersect itself).
+fn is_simple_polygon(polygon: &[Vector2D<f32>]) -> bool {
+    #[derive(Clone)]
+    enum EventType {
+        Start,
+        End,
+        Vertical,
+    }
+
+    #[derive(Clone)]
+    struct Event {
+        edge: usize,
+        event_type: EventType,
+        position: f32,
+    }
+
+    let mut events = Vec::new();
+    for i in 0..polygon.len() {
+        let a = i;
+        let b = (i + 1) % polygon.len();
+
+        let node_a = &polygon[a];
+        let node_b = &polygon[b];
+
+        if node_a[0] != node_b[0] {
+            events.push(Event {
+                edge: i,
+                event_type: EventType::Start,
+                position: node_a[0].min(node_b[0]),
+            });
+            events.push(Event {
+                edge: i,
+                event_type: EventType::End,
+                position: node_a[0].max(node_b[0]),
+            });
+        } else {
+            events.push(Event {
+                edge: i,
+                event_type: EventType::Vertical,
+                position: node_a[0],
+            });
+        }
+    }
+
+    events.sort_by(|event_a, event_b| {
+        event_a
+            .position
+            .partial_cmp(&event_b.position)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let mut active_edges: BTreeSet<usize> = BTreeSet::new();
+    let mut prev_event: Option<Event> = None;
+    let mut has_vertical_edges = false;
+
+    let remove_passed_vertical_edges =
+        |edges: &mut BTreeSet<usize>,
+         event: &Event,
+         prev_event: &Option<Event>,
+         has_vertical_edges: &mut bool| {
+            if !*has_vertical_edges {
+                return;
+            }
+
+            match &prev_event {
+                Some(prev) if prev.position < event.position => {
+                    edges.retain(|edge| {
+                        let node_a = *edge;
+                        let node_b = (*edge + 1) % polygon.len();
+                        polygon[node_a][0] != polygon[node_b][0]
+                    });
+                    *has_vertical_edges = false;
+                }
+                _ => {}
+            }
+        };
+
+    for event in events {
+        remove_passed_vertical_edges(
+            &mut active_edges,
+            &event,
+            &prev_event,
+            &mut has_vertical_edges,
+        );
+        prev_event = Some(event.clone());
+
+        match event.event_type {
+            EventType::End => {
+                active_edges.remove(&event.edge);
+                continue;
+            }
+            EventType::Vertical => {
+                has_vertical_edges = true;
+            }
+            _ => {}
+        }
+
+        // A line can be represented by the equation: ax + by + c = 0
+        // where (x0, y0) and (x1, y1) are points on the line, a = (y1 - y0), b = (x0 - x1), and c = -a*x0 - b*y0
+        let curr_node0 = &polygon[event.edge];
+        let curr_node1 = &polygon[(event.edge + 1) % polygon.len()];
+        let curr_edge_a = curr_node1[1] - curr_node0[1];
+        let curr_edge_b = curr_node0[0] - curr_node1[0];
+        let curr_edge_c = -curr_edge_a * curr_node0[0] - curr_edge_b * curr_node0[1];
+
+        let edges_are_adjacent =
+            |e1: usize, e2: usize| e1 == (e2 + 1) % polygon.len() || e2 == (e1 + 1) % polygon.len();
+
+        for test_edge in active_edges.iter() {
+            if edges_are_adjacent(*test_edge, event.edge) {
+                continue;
+            }
+
+            let test_node0 = &polygon[*test_edge];
+            let test_node1 = &polygon[(*test_edge + 1) % polygon.len()];
+
+            let test_node0_on_line =
+                get_point_line_relation(test_node0, curr_edge_a, curr_edge_b, curr_edge_c);
+            let test_node1_on_line =
+                get_point_line_relation(test_node1, curr_edge_a, curr_edge_b, curr_edge_c);
+            match (test_node0_on_line, test_node1_on_line) {
+                (PointLineRelation::SideA, PointLineRelation::SideA)
+                | (PointLineRelation::SideB, PointLineRelation::SideB) => {
+                    continue;
+                }
+                _ => {}
+            }
+
+            let test_edge_a = test_node1[1] - test_node0[1];
+            let test_edge_b = test_node0[0] - test_node1[0];
+            let test_edge_c = -test_edge_a * test_node0[0] - test_edge_b * test_node0[1];
+
+            let curr0_on_line =
+                get_point_line_relation(curr_node0, test_edge_a, test_edge_b, test_edge_c);
+            let curr1_on_line =
+                get_point_line_relation(curr_node1, test_edge_a, test_edge_b, test_edge_c);
+
+            match (curr0_on_line, curr1_on_line) {
+                (PointLineRelation::SideA, PointLineRelation::SideA)
+                | (PointLineRelation::SideB, PointLineRelation::SideB) => {
+                    continue;
+                }
+                _ => {}
+            }
+
+            return false;
+        }
+
+        active_edges.insert(event.edge);
+    }
+
+    true
+}
 
 /// Computes the signed area of a polygon given by a list of points.
 /// The area is positive if the points are wound in the counter-clockwise direction
@@ -158,11 +338,159 @@ fn triangulate_by_ear_clipping(polygon: &[Vector2D<f32>]) -> Option<Vec<[usize; 
     Some(triangles)
 }
 
+pub fn triangulate(polygon: &[Vector2D<f32>]) -> Option<Vec<[usize; 3]>> {
+    static COMPLEX_POLYGON_WARNING: OnceLock<()> = OnceLock::new();
+    if !is_simple_polygon(polygon) {
+        COMPLEX_POLYGON_WARNING.get_or_init(|| {
+            eprintln!("Warning: Attempted to triangulate a non-simple polygon. The triangulation will be skipped.");
+        });
+        return None;
+    }
+
+    triangulate_by_ear_clipping(polygon)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::vector::Vector2D;
 
     use super::*;
+
+    #[test]
+    fn points_on_opposite_sides_of_line() {
+        let a = Vector2D::from([0.0, 0.0]);
+        let b = Vector2D::from([4.0, 4.0]);
+
+        let p1 = Vector2D::from([1.0, 2.0]);
+        let p2 = Vector2D::from([2.0, 1.0]);
+
+        let line_a = b[1] - a[1];
+        let line_b = a[0] - b[0];
+        let line_c = -line_a * a[0] - line_b * a[1];
+
+        assert_ne!(
+            get_point_line_relation(&p1, line_a, line_b, line_c),
+            PointLineRelation::Intersection
+        );
+        assert_ne!(
+            get_point_line_relation(&p2, line_a, line_b, line_c),
+            PointLineRelation::Intersection
+        );
+        assert_ne!(
+            get_point_line_relation(&p1, line_a, line_b, line_c),
+            get_point_line_relation(&p2, line_a, line_b, line_c)
+        );
+    }
+
+    #[test]
+    fn points_on_same_sides_of_line() {
+        let a = Vector2D::from([0.0, 0.0]);
+        let b = Vector2D::from([4.0, 4.0]);
+
+        let p1 = Vector2D::from([1.0, 2.0]);
+        let p2 = Vector2D::from([1.0, 3.0]);
+
+        let line_a = b[1] - a[1];
+        let line_b = a[0] - b[0];
+        let line_c = -line_a * a[0] - line_b * a[1];
+
+        assert_ne!(
+            get_point_line_relation(&p1, line_a, line_b, line_c),
+            PointLineRelation::Intersection
+        );
+        assert_ne!(
+            get_point_line_relation(&p2, line_a, line_b, line_c),
+            PointLineRelation::Intersection
+        );
+        assert_eq!(
+            get_point_line_relation(&p1, line_a, line_b, line_c),
+            get_point_line_relation(&p2, line_a, line_b, line_c)
+        );
+    }
+
+    #[test]
+    fn points_intersecting_line_once() {
+        let a = Vector2D::from([0.0, 0.0]);
+        let b = Vector2D::from([4.0, 4.0]);
+
+        let p1 = Vector2D::from([2.0, 2.0]);
+        let p2 = Vector2D::from([2.0, 1.0]);
+
+        let line_a = b[1] - a[1];
+        let line_b = a[0] - b[0];
+        let line_c = -line_a * a[0] - line_b * a[1];
+
+        assert_eq!(
+            get_point_line_relation(&p1, line_a, line_b, line_c),
+            PointLineRelation::Intersection
+        );
+        assert_ne!(
+            get_point_line_relation(&p1, line_a, line_b, line_c),
+            get_point_line_relation(&p2, line_a, line_b, line_c)
+        );
+    }
+
+    #[test]
+    fn points_intersecting_line_twice() {
+        let a = Vector2D::from([0.0, 0.0]);
+        let b = Vector2D::from([4.0, 4.0]);
+
+        let p1 = Vector2D::from([2.0, 2.0]);
+        let p2 = Vector2D::from([1.0, 1.0]);
+
+        let line_a = b[1] - a[1];
+        let line_b = a[0] - b[0];
+        let line_c = -line_a * a[0] - line_b * a[1];
+
+        assert_eq!(
+            get_point_line_relation(&p1, line_a, line_b, line_c),
+            PointLineRelation::Intersection
+        );
+        assert_eq!(
+            get_point_line_relation(&p2, line_a, line_b, line_c),
+            PointLineRelation::Intersection
+        );
+    }
+
+    #[test]
+    fn simple_polygon() {
+        let square = [
+            Vector2D::from([0.0, 0.0]),
+            Vector2D::from([1.0, 0.0]),
+            Vector2D::from([1.0, 1.0]),
+            Vector2D::from([0.0, 1.0]),
+        ];
+        assert!(is_simple_polygon(&square));
+
+        let triangle = [
+            Vector2D::from([0.0, 0.0]),
+            Vector2D::from([4.0, 0.0]),
+            Vector2D::from([2.0, 3.0]),
+        ];
+        assert!(is_simple_polygon(&triangle));
+    }
+
+    #[test]
+    fn hourglass_polygon() {
+        let hourglass = [
+            Vector2D::from([0.0, 0.0]),
+            Vector2D::from([2.0, 2.0]),
+            Vector2D::from([0.0, 2.0]),
+            Vector2D::from([2.0, 0.0]),
+        ];
+        assert!(!is_simple_polygon(&hourglass));
+    }
+
+    #[test]
+    fn lightning_bolt_polygon() {
+        let lightning_bolt = [
+            Vector2D::from([0.0, 0.0]),
+            Vector2D::from([1.0, 1.0]),
+            Vector2D::from([1.0, 2.0]),
+            Vector2D::from([2.0, 2.0]),
+        ];
+        assert!(!is_simple_polygon(&lightning_bolt));
+    }
 
     #[test]
     fn polygon_area() {
