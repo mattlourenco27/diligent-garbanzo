@@ -42,10 +42,17 @@ impl ShaderMgr {
     }
 
     pub unsafe fn update_norm_to_viewer(&self, norm_to_viewer_transform: &Matrix3x3<f32>) {
+        self.basic_shader.activate();
         self.basic_shader
             .update_norm_to_viewer(norm_to_viewer_transform);
+        self.line_shader.activate();
         self.line_shader
             .update_norm_to_viewer(norm_to_viewer_transform);
+
+        match self.active_shader {
+            Shader::Basic => self.basic_shader.activate(),
+            Shader::Line => self.line_shader.activate(),
+        }
     }
 
     pub unsafe fn set_line_thickness(&self, thickness: f32) {
