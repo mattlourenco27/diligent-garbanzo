@@ -22,26 +22,67 @@ const VERTEX_SHADER: &CStr = c"#version 150 core
 in vec2 position;
 in vec4 color;
 
-uniform mat3 norm_to_viewer;
+out vec4 VertexColor;
 
-out vec4 Color;
-
-void main()
-{
-    Color = color;
-    vec3 transformed_position = vec3(position, 1.0) * norm_to_viewer;
-    gl_Position = vec4(transformed_position.x, -transformed_position.y, 0.0, 1.0);
+void main() {
+    VertexColor = color;
+    gl_Position = vec4(position, 0.0, 1.0);
 }";
 
 const FRAGMENT_SHADER: &CStr = c"#version 150 core
 
-in vec4 Color;
+in vec4 GeoColor;
 
 out vec4 outColor;
 
 void main()
 {
-    outColor = Color;
+    outColor = GeoColor;
+}";
+
+const GEOMETRY_SHADER: &CStr = c"#version 150 core
+layout(lines) in;
+layout(triangle_strip, max_vertices = 4) out;
+
+in vec4 VertexColor[];
+out vec4 GeoColor;
+
+uniform float thickness;
+uniform mat3 norm_to_viewer;
+
+void main() {
+    vec2 p0 = gl_in[0].gl_Position.xy;
+    vec2 p1 = gl_in[1].gl_Position.xy;
+
+    vec2 dir = normalize(p1 - p0);
+    vec2 offset = vec2(-dir.y, dir.x) * thickness * 0.5;
+
+    // Generate corners of rectangle
+    vec2 v0 = p0 + offset;
+    vec2 v1 = p0 - offset;
+    vec2 v2 = p1 + offset;
+    vec2 v3 = p1 - offset;
+
+    // Transform to screen space when outputting
+    GeoColor = VertexColor[0];
+    vec3 transformed = vec3(v0, 1.0) * norm_to_viewer;
+    gl_Position = vec4(transformed.x, -transformed.y, 0.0, 1.0);
+    EmitVertex();
+    
+    transformed = vec3(v1, 1.0) * norm_to_viewer;
+    gl_Position = vec4(transformed.x, -transformed.y, 0.0, 1.0);
+    EmitVertex();
+    
+    GeoColor = VertexColor[1];
+    transformed = vec3(v2, 1.0) * norm_to_viewer;
+    gl_Position = vec4(transformed.x, -transformed.y, 0.0, 1.0);
+    EmitVertex();
+    
+    transformed = vec3(v3, 1.0) * norm_to_viewer;
+    gl_Position = vec4(transformed.x, -transformed.y, 0.0, 1.0);
+    EmitVertex();
+    
+    EndPrimitive();
 }";
 
 unsafe fn maybe_get_gl_error() -> Result<(), String> {
@@ -60,6 +101,7 @@ struct ShadersAndProgram {
     position_attr: GLuint,
     color_attr: GLuint,
     norm_to_viewer_uniform: GLuint,
+    line_thickness_uniform: GLuint,
 }
 
 impl ShadersAndProgram {
@@ -106,10 +148,12 @@ impl ShadersAndProgram {
     unsafe fn create_new_program(
         vertex_shader: GLuint,
         fragment_shader: GLuint,
+        geometry_shader: GLuint,
     ) -> Result<GLuint, String> {
         let shader_program = gl::CreateProgram();
         gl::AttachShader(shader_program, vertex_shader);
         gl::AttachShader(shader_program, fragment_shader);
+        gl::AttachShader(shader_program, geometry_shader);
 
         maybe_get_gl_error()?;
 
@@ -140,7 +184,9 @@ impl ShadersAndProgram {
         Ok(())
     }
 
-    unsafe fn get_attributes(shader_program: GLuint) -> Result<(GLuint, GLuint, GLuint), String> {
+    unsafe fn get_attributes(
+        shader_program: GLuint,
+    ) -> Result<(GLuint, GLuint, GLuint, GLuint), String> {
         let position_attribute = gl::GetAttribLocation(shader_program, c"position".as_ptr());
 
         maybe_get_gl_error()?;
@@ -152,12 +198,15 @@ impl ShadersAndProgram {
         let norm_to_viewer_uniform =
             gl::GetUniformLocation(shader_program, c"norm_to_viewer".as_ptr());
 
+        let line_thickness_uniform = gl::GetUniformLocation(shader_program, c"thickness".as_ptr());
+
         maybe_get_gl_error()?;
 
         Ok((
             position_attribute as GLuint,
             color_attribute as GLuint,
             norm_to_viewer_uniform as GLuint,
+            line_thickness_uniform as GLuint,
         ))
     }
 
@@ -167,9 +216,14 @@ impl ShadersAndProgram {
                 ShadersAndProgram::send_and_compile_shader(gl::VERTEX_SHADER, VERTEX_SHADER)?;
             let fragment_shader =
                 ShadersAndProgram::send_and_compile_shader(gl::FRAGMENT_SHADER, FRAGMENT_SHADER)?;
+            let geometry_shader =
+                ShadersAndProgram::send_and_compile_shader(gl::GEOMETRY_SHADER, GEOMETRY_SHADER)?;
 
-            let shader_program =
-                ShadersAndProgram::create_new_program(vertex_shader, fragment_shader)?;
+            let shader_program = ShadersAndProgram::create_new_program(
+                vertex_shader,
+                fragment_shader,
+                geometry_shader,
+            )?;
 
             ShadersAndProgram::bind_fragment_shader_output(shader_program)?;
 
@@ -177,7 +231,7 @@ impl ShadersAndProgram {
 
             ShadersAndProgram::activate_program(shader_program)?;
 
-            let (position_attr, color_attr, norm_to_viewer_uniform) =
+            let (position_attr, color_attr, norm_to_viewer_uniform, line_thickness_uniform) =
                 ShadersAndProgram::get_attributes(shader_program)?;
 
             Ok(ShadersAndProgram {
@@ -187,6 +241,7 @@ impl ShadersAndProgram {
                 position_attr,
                 color_attr,
                 norm_to_viewer_uniform,
+                line_thickness_uniform,
             })
         }
     }
@@ -214,7 +269,7 @@ impl ShadersAndProgram {
         gl::EnableVertexAttribArray(self.color_attr as gl::types::GLuint);
     }
 
-    fn update_uniform(&self, norm_to_viewer_transform: &Matrix3x3<f32>) {
+    fn update_norm_to_viewer(&self, norm_to_viewer_transform: &Matrix3x3<f32>) {
         unsafe {
             gl::UniformMatrix3fv(
                 self.norm_to_viewer_uniform as GLint,
@@ -223,6 +278,12 @@ impl ShadersAndProgram {
                 <&Matrix3x3<f32> as Into<&[[f32; 3]; 3]>>::into(norm_to_viewer_transform)[0]
                     .as_ptr(),
             );
+        }
+    }
+
+    fn update_line_thickness(&self, thickness: f32) {
+        unsafe {
+            gl::Uniform1f(self.line_thickness_uniform as GLint, thickness);
         }
     }
 }
@@ -251,9 +312,10 @@ impl From<Color> for GLColor {
     }
 }
 
-enum VertexData {
-    Combined(CombinedVertexData),
-    Polygon(PolygonFillData),
+enum RawOperationData {
+    DrawVertices(CombinedVertexData),
+    FillPolygon(PolygonFillData),
+    UpdateLineThickness(f32),
 }
 
 struct CombinedVertexData {
@@ -266,60 +328,64 @@ struct PolygonFillData {
     fill_sequence: Vec<GLuint>,
 }
 
-struct VertexExtractor {
-    data: Vec<VertexData>,
+struct OperationExtractor {
+    data: Vec<RawOperationData>,
 }
 
-impl VertexExtractor {
+impl OperationExtractor {
     fn from_svg_vertices(svg_object: &SVG) -> Self {
         let mut extractor = Self { data: Vec::new() };
 
         for element in svg_object.elements.iter() {
-            extractor.load_element_vertices(&element, &Matrix3x3::IDENTITY3X3);
+            extractor.data.push(RawOperationData::UpdateLineThickness(
+                Style::DEFAULT.stroke_width,
+            ));
+            extractor.load_element_vertices(&element, &Matrix3x3::IDENTITY3X3, &Style::DEFAULT);
         }
 
         extractor
     }
 
-    fn load_svg_vertices(&mut self, svg_object: &SVG, transform: &Transform) {
+    fn load_svg_vertices(&mut self, svg_object: &SVG, transform: &Transform, style: &Style) {
         for element in svg_object.elements.iter() {
-            self.load_element_vertices(&element, transform);
+            self.load_element_vertices(&element, transform, style);
         }
     }
 
-    fn load_element_vertices(&mut self, element: &Element, transform: &Transform) {
+    fn load_element_vertices(&mut self, element: &Element, transform: &Transform, style: &Style) {
         match element {
-            Element::StartTag(start_tag) => self.load_tag_group_vertices(start_tag, transform),
-            Element::EmptyTag(empty_tag) => self.load_empty_tag_vertices(empty_tag, transform),
+            Element::StartTag(start_tag) => self.load_tag_group_vertices(start_tag, transform, style),
+            Element::EmptyTag(empty_tag) => self.load_empty_tag_vertices(empty_tag, transform, style),
             Element::EndTag(_) => (),
         }
     }
 
-    fn load_tag_group_vertices(&mut self, tag_group: &StartTag, transform: &Transform) {
+    fn load_tag_group_vertices(&mut self, tag_group: &StartTag, transform: &Transform, style: &Style) {
         match tag_group {
             StartTag::Group(group) => {
                 let new_transform = transform * &group.style.transform;
+                self.handle_style_changes(style, &group.style);
                 for element in group.elements.iter() {
-                    self.load_element_vertices(element, &new_transform);
+                    self.load_element_vertices(element, &new_transform, &group.style);
                 }
             }
-            StartTag::SVG(svg_object) => self.load_svg_vertices(svg_object, transform),
+            StartTag::SVG(svg_object) => self.load_svg_vertices(svg_object, transform, style),
         }
     }
 
-    fn load_empty_tag_vertices(&mut self, empty_tag: &EmptyTag, transform: &Transform) {
+    fn load_empty_tag_vertices(&mut self, empty_tag: &EmptyTag, transform: &Transform, style: &Style) {
         match empty_tag {
             EmptyTag::Ellipse(_ellipse) => unimplemented!(),
             EmptyTag::Image(_image) => unimplemented!(),
-            EmptyTag::Line(line) => self.load_line_vertices(line, transform),
-            EmptyTag::Point(point) => self.load_point(point, transform),
-            EmptyTag::Polygon(polygon) => self.load_polygon_vertices(polygon, transform),
+            EmptyTag::Line(line) => self.load_line_vertices(line, transform, style),
+            EmptyTag::Point(point) => self.load_point(point, transform, style),
+            EmptyTag::Polygon(polygon) => self.load_polygon_vertices(polygon, transform, style),
             EmptyTag::Polyline(_polyline) => unimplemented!(),
             EmptyTag::Rect(_rect) => unimplemented!(),
         }
     }
 
-    fn load_point(&mut self, point: &Point, transform: &Transform) {
+    fn load_point(&mut self, point: &Point, transform: &Transform, style: &Style) {
         let new_transform = transform * &point.style.transform;
         let transformed_position = Vector3D::from_vector(&point.position) * new_transform;
 
@@ -333,6 +399,8 @@ impl VertexExtractor {
         if color.3 == 0.0 {
             return;
         }
+
+        self.handle_style_changes(style, &point.style);
 
         self.append_combined_data(
             gl::POINTS,
@@ -349,7 +417,7 @@ impl VertexExtractor {
         );
     }
 
-    fn load_line_vertices(&mut self, line: &Line, transform: &Transform) {
+    fn load_line_vertices(&mut self, line: &Line, transform: &Transform, style: &Style) {
         let new_transform = transform * &line.style.transform;
         let transformed_p1 = Vector3D::from_vector(&line.from) * &new_transform;
         let transformed_p2 = Vector3D::from_vector(&line.to) * new_transform;
@@ -364,6 +432,8 @@ impl VertexExtractor {
         if color.3 == 0.0 {
             return;
         }
+
+        self.handle_style_changes(style, &line.style);
 
         self.append_combined_data(
             gl::LINES,
@@ -394,14 +464,15 @@ impl VertexExtractor {
         merge_with_last_if_possible: bool,
     ) {
         let combined_data = match self.data.last_mut() {
-            Some(VertexData::Combined(combined_data)) => combined_data,
+            Some(RawOperationData::DrawVertices(combined_data)) => combined_data,
             _ => {
-                self.data.push(VertexData::Combined(CombinedVertexData {
-                    data: Vec::new(),
-                    data_types: Vec::new(),
-                }));
+                self.data
+                    .push(RawOperationData::DrawVertices(CombinedVertexData {
+                        data: Vec::new(),
+                        data_types: Vec::new(),
+                    }));
                 match self.data.last_mut() {
-                    Some(VertexData::Combined(combined_data)) => combined_data,
+                    Some(RawOperationData::DrawVertices(combined_data)) => combined_data,
                     _ => panic!("Just pushed a CombinedVertexData, so this should not be None"),
                 }
             }
@@ -421,7 +492,7 @@ impl VertexExtractor {
         }
     }
 
-    fn load_polygon_vertices(&mut self, polygon: &Polygon, transform: &Transform) {
+    fn load_polygon_vertices(&mut self, polygon: &Polygon, transform: &Transform, style: &Style) {
         let polygon_transform = transform * &polygon.style.transform;
         let mut fill_vertex_data: Vec<f32> = Vec::new();
         let mut fill_element_data: Vec<GLuint> = Vec::new();
@@ -485,19 +556,29 @@ impl VertexExtractor {
         }
 
         if do_fill {
-            self.data.push(VertexData::Polygon(PolygonFillData {
-                vertices: fill_vertex_data,
-                fill_sequence: fill_element_data,
-            }));
+            self.data
+                .push(RawOperationData::FillPolygon(PolygonFillData {
+                    vertices: fill_vertex_data,
+                    fill_sequence: fill_element_data,
+                }));
         }
 
         if do_outline {
+            self.handle_style_changes(style, &polygon.style);
+
             self.append_combined_data(
                 gl::LINE_LOOP,
                 &stroke_vertex_data,
                 polygon.points.len() as u32,
                 false,
             );
+        }
+    }
+
+    fn handle_style_changes(&mut self, old_style: &Style, new_style: &Style) {
+        if old_style.stroke_width != new_style.stroke_width {
+            self.data
+                .push(RawOperationData::UpdateLineThickness(new_style.stroke_width));
         }
     }
 }
@@ -509,7 +590,7 @@ struct CombinedVertexArray {
 }
 
 impl CombinedVertexArray {
-    unsafe fn render(&self) {
+    unsafe fn draw(&self) {
         gl::BindVertexArray(self.array_index);
         gl::BindBuffer(gl::ARRAY_BUFFER, self.buffer_index);
         let mut total_drawn: u32 = 0;
@@ -537,7 +618,7 @@ struct ElementVertexArray {
 }
 
 impl ElementVertexArray {
-    unsafe fn render(&self) {
+    unsafe fn draw(&self) {
         gl::BindVertexArray(self.array_index);
         gl::BindBuffer(gl::ARRAY_BUFFER, self.buffer_index);
         gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.element_buffer_index);
@@ -560,22 +641,23 @@ impl Drop for ElementVertexArray {
     }
 }
 
-enum VertexArray {
-    Combined(CombinedVertexArray),
-    Element(ElementVertexArray),
+enum Operation {
+    DrawVertices(CombinedVertexArray),
+    FillPolygon(ElementVertexArray),
+    UpdateLineThickness(f32),
 }
 
-impl VertexArray {
+impl Operation {
     fn gen_from_svg(svg_object: &SVG, shaders: &ShadersAndProgram) -> Vec<Self> {
-        let vertices = VertexExtractor::from_svg_vertices(svg_object);
+        let raw_operation_data = OperationExtractor::from_svg_vertices(svg_object);
 
-        let mut vertex_arrays = Vec::new();
+        let mut operations = Vec::new();
 
-        vertex_arrays.reserve_exact(vertices.data.len());
+        operations.reserve_exact(raw_operation_data.data.len());
 
-        for vertex_data in vertices.data.into_iter() {
-            match vertex_data {
-                VertexData::Combined(combined_data) => {
+        for operation_data in raw_operation_data.data.into_iter() {
+            match operation_data {
+                RawOperationData::DrawVertices(combined_data) => {
                     let mut combined_buffer = CombinedVertexArray {
                         array_index: 0,
                         buffer_index: 0,
@@ -599,9 +681,9 @@ impl VertexArray {
                         shaders.bind_attributes_to_vertex_array();
                     }
 
-                    vertex_arrays.push(VertexArray::Combined(combined_buffer));
+                    operations.push(Operation::DrawVertices(combined_buffer));
                 }
-                VertexData::Polygon(polygon_data) => {
+                RawOperationData::FillPolygon(polygon_data) => {
                     let mut element_buffer = ElementVertexArray {
                         array_index: 0,
                         buffer_index: 0,
@@ -639,22 +721,28 @@ impl VertexArray {
                         shaders.bind_attributes_to_vertex_array();
                     }
 
-                    vertex_arrays.push(VertexArray::Element(element_buffer))
+                    operations.push(Operation::FillPolygon(element_buffer))
+                }
+                RawOperationData::UpdateLineThickness(thickness) => {
+                    operations.push(Operation::UpdateLineThickness(thickness));
                 }
             }
         }
 
-        vertex_arrays
+        operations
     }
 
-    fn render(&self) {
+    fn execute(&self, shaders: &ShadersAndProgram) {
         unsafe {
             match self {
-                VertexArray::Combined(combined_buffer) => {
-                    combined_buffer.render();
+                Operation::DrawVertices(combined_buffer) => {
+                    combined_buffer.draw();
                 }
-                VertexArray::Element(element_buffer) => {
-                    element_buffer.render();
+                Operation::FillPolygon(element_buffer) => {
+                    element_buffer.draw();
+                }
+                Operation::UpdateLineThickness(thickness) => {
+                    shaders.update_line_thickness(*thickness);
                 }
             }
         }
@@ -774,7 +862,7 @@ pub struct GLRenderer {
     _gl_ctx: GLContext,
     viewer: GLViewer,
     shaders: ShadersAndProgram,
-    vertex_arrays: Vec<VertexArray>,
+    operation: Vec<Operation>,
 }
 
 impl GLRenderer {
@@ -783,9 +871,9 @@ impl GLRenderer {
 
         let shaders = ShadersAndProgram::build()?;
 
-        let mut vertex_arrays = Vec::new();
+        let mut operations = Vec::new();
         for object in object_mgr.get_objects() {
-            vertex_arrays.extend(VertexArray::gen_from_svg(&object.svg_inst, &shaders));
+            operations.extend(Operation::gen_from_svg(&object.svg_inst, &shaders));
         }
 
         let gl_renderer = Self {
@@ -793,14 +881,14 @@ impl GLRenderer {
             _gl_ctx: gl_ctx,
             viewer: GLViewer::new(Vector2D::from(window_size)),
             shaders,
-            vertex_arrays,
+            operation: operations,
         };
 
         Ok(gl_renderer)
     }
 
-    fn render_object(&self, vertex_array: &VertexArray) {
-        vertex_array.render();
+    fn perform_operation(&self, operation: &Operation) {
+        operation.execute(&self.shaders);
     }
 }
 
@@ -819,10 +907,10 @@ impl Renderer for GLRenderer {
     fn render_objects(&mut self) {
         // update uniform controlling the viewer transform (if necessary? Maybe do that only when it updates?)
         self.shaders
-            .update_uniform(self.viewer.get_norm_to_viewer());
+            .update_norm_to_viewer(self.viewer.get_norm_to_viewer());
 
-        for vertex_array in self.vertex_arrays.iter() {
-            self.render_object(vertex_array);
+        for operation in self.operation.iter() {
+            self.perform_operation(operation);
         }
     }
 
