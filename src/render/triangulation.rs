@@ -50,6 +50,11 @@ fn is_simple_polygon(polygon: &[Vector2D<f32>]) -> bool {
         let node_a = &polygon[a];
         let node_b = &polygon[b];
 
+        if node_a == node_b {
+            // This is not a real edge, so skip it
+            continue;
+        }
+
         if node_a[0] != node_b[0] {
             events.push(Event {
                 edge: i,
