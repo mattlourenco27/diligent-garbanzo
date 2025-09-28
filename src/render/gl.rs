@@ -9,10 +9,7 @@ use sdl2::{
 
 use crate::{
     matrix::Matrix3x3,
-    objects::{
-        svg::{Element, EmptyTag, Line, Point, StartTag, Style, Transform, SVG},
-        Object, ObjectMgr,
-    },
+    objects::{svg::*, Object, ObjectMgr},
     render::{Renderer, Viewer},
     vector::{Vector2D, Vector3D},
 };
@@ -194,7 +191,7 @@ impl ShadersAndProgram {
         }
     }
 
-    fn bind_attributes_to_vertex_array(&self) -> Result<(), String> {
+    fn bind_attributes_to_vertex_array(&self) {
         unsafe {
             gl::VertexAttribPointer(
                 self.position_attr as gl::types::GLuint,
@@ -206,8 +203,6 @@ impl ShadersAndProgram {
                 std::ptr::null(),
             );
 
-            maybe_get_gl_error()?;
-
             gl::VertexAttribPointer(
                 self.color_attr as gl::types::GLuint,
                 COLOR_SIZE as GLint,
@@ -218,13 +213,9 @@ impl ShadersAndProgram {
                 (POS_SIZE as usize * std::mem::size_of::<f32>()) as *const c_void,
             );
 
-            maybe_get_gl_error()?;
-
             gl::EnableVertexAttribArray(self.position_attr as gl::types::GLuint);
             gl::EnableVertexAttribArray(self.color_attr as gl::types::GLuint);
         }
-
-        Ok(())
     }
 
     fn update_uniform(&self, norm_to_viewer_transform: &Matrix3x3<f32>) {
@@ -264,17 +255,28 @@ impl From<Color> for GLColor {
     }
 }
 
-struct VertexExtractor {
+enum VertexData {
+    Combined(CombinedVertexData),
+    Polygon(PolygonFillData),
+}
+
+struct CombinedVertexData {
     data: Vec<f32>,
     data_types: Vec<(GLenum, u32)>,
 }
 
+struct PolygonFillData {
+    vertices: Vec<f32>,
+    fill_sequence: Vec<GLuint>,
+}
+
+struct VertexExtractor {
+    data: Vec<VertexData>,
+}
+
 impl VertexExtractor {
     fn from_svg_vertices(svg_object: &SVG) -> Self {
-        let mut extractor = Self {
-            data: Vec::new(),
-            data_types: Vec::new(),
-        };
+        let mut extractor = Self { data: Vec::new() };
 
         for element in svg_object.elements.iter() {
             extractor.load_element_vertices(&element, &Matrix3x3::IDENTITY3X3);
@@ -315,7 +317,7 @@ impl VertexExtractor {
             EmptyTag::Image(_image) => unimplemented!(),
             EmptyTag::Line(line) => self.load_line_vertices(line, transform),
             EmptyTag::Point(point) => self.load_point(point, transform),
-            EmptyTag::Polygon(_polygon) => unimplemented!(),
+            EmptyTag::Polygon(polygon) => self.load_polygon_vertices(polygon, transform),
             EmptyTag::Polyline(_polyline) => unimplemented!(),
             EmptyTag::Rect(_rect) => unimplemented!(),
         }
@@ -325,18 +327,20 @@ impl VertexExtractor {
         let new_transform = transform * &point.style.transform;
         let transformed_position = Vector3D::from_vector(&point.position) * new_transform;
 
-        let color: GLColor = (|| {
-            if point.style.fill_color == Style::DEFAULT.fill_color {
-                point.style.stroke_color
-            } else {
-                point.style.fill_color
-            }
-        })()
+        let color: GLColor = if point.style.fill_color == Style::DEFAULT.fill_color {
+            point.style.stroke_color
+        } else {
+            point.style.fill_color
+        }
         .into();
 
-        self.append_data(
+        if color.3 == 0.0 {
+            return;
+        }
+
+        self.append_combined_data(
             gl::POINTS,
-            vec![
+            &[
                 transformed_position[0],
                 transformed_position[1],
                 color.0,
@@ -345,6 +349,7 @@ impl VertexExtractor {
                 color.3,
             ],
             1,
+            true,
         );
     }
 
@@ -353,18 +358,20 @@ impl VertexExtractor {
         let transformed_p1 = Vector3D::from_vector(&line.from) * &new_transform;
         let transformed_p2 = Vector3D::from_vector(&line.to) * new_transform;
 
-        let color: GLColor = (|| {
-            if line.style.fill_color == Style::DEFAULT.fill_color {
-                line.style.stroke_color
-            } else {
-                line.style.fill_color
-            }
-        })()
+        let color: GLColor = if line.style.fill_color == Style::DEFAULT.fill_color {
+            line.style.stroke_color
+        } else {
+            line.style.fill_color
+        }
         .into();
 
-        self.append_data(
+        if color.3 == 0.0 {
+            return;
+        }
+
+        self.append_combined_data(
             gl::LINES,
-            vec![
+            &[
                 transformed_p1[0],
                 transformed_p1[1],
                 color.0,
@@ -379,76 +386,281 @@ impl VertexExtractor {
                 color.3,
             ],
             2,
+            true,
         );
     }
 
-    fn append_data(&mut self, data_type: GLenum, mut new_data: Vec<f32>, num_vertices: u32) {
-        self.data.append(&mut new_data);
-
-        match self.data_types.last_mut() {
-            None => self.data_types.push((data_type, num_vertices)),
-            Some((last_data_type, last_count)) => {
-                if *last_data_type == data_type {
-                    *last_count += num_vertices;
-                } else {
-                    self.data_types.push((data_type, num_vertices));
+    fn append_combined_data(
+        &mut self,
+        data_type: GLenum,
+        new_data: &[f32],
+        num_vertices: u32,
+        merge_with_last_if_possible: bool,
+    ) {
+        let combined_data = match self.data.last_mut() {
+            Some(VertexData::Combined(combined_data)) => combined_data,
+            _ => {
+                self.data.push(VertexData::Combined(CombinedVertexData {
+                    data: Vec::new(),
+                    data_types: Vec::new(),
+                }));
+                match self.data.last_mut() {
+                    Some(VertexData::Combined(combined_data)) => combined_data,
+                    _ => panic!("Just pushed a CombinedVertexData, so this should not be None"),
                 }
             }
+        };
+
+        combined_data.data.extend_from_slice(new_data);
+
+        match combined_data.data_types.last_mut() {
+            Some((last_data_type, last_count))
+                if *last_data_type == data_type && merge_with_last_if_possible =>
+            {
+                *last_count += num_vertices;
+            }
+            _ => {
+                combined_data.data_types.push((data_type, num_vertices));
+            }
+        }
+    }
+
+    fn load_polygon_vertices(&mut self, polygon: &Polygon, transform: &Transform) {
+        let polygon_transform = transform * &polygon.style.transform;
+        let mut fill_vertex_data: Vec<f32> = Vec::new();
+        let mut fill_element_data: Vec<GLuint> = Vec::new();
+        let mut stroke_vertex_data: Vec<f32> = Vec::new();
+        let fill_color: GLColor = polygon.style.fill_color.into();
+        let stroke_color: GLColor = polygon.style.stroke_color.into();
+        let do_outline = stroke_color.3 > 0.0 && polygon.style.stroke_width > 0.0;
+        let mut do_fill = fill_color.3 > 0.0;
+
+        let triangles = if do_fill {
+            crate::render::triangulation::triangulate(&polygon.points)
+        } else {
+            None
+        };
+        do_fill &= triangles.is_some();
+
+        if !do_outline && !do_fill {
+            return;
+        }
+
+        if do_fill {
+            fill_vertex_data.reserve_exact(polygon.points.len() * (POS_SIZE + COLOR_SIZE) as usize);
+            let triangles = triangles.unwrap();
+            fill_element_data.reserve_exact(triangles.len() * 3);
+            for triangle in triangles.iter() {
+                fill_element_data.push(triangle[0] as GLuint);
+                fill_element_data.push(triangle[1] as GLuint);
+                fill_element_data.push(triangle[2] as GLuint);
+            }
+        }
+
+        if do_outline {
+            stroke_vertex_data
+                .reserve_exact(polygon.points.len() * (POS_SIZE + COLOR_SIZE) as usize);
+        }
+
+        for point in polygon.points.iter() {
+            let transformed_position = Vector3D::from_vector(point) * &polygon_transform;
+
+            if do_fill {
+                fill_vertex_data.extend_from_slice(&[
+                    transformed_position[0],
+                    transformed_position[1],
+                    fill_color.0,
+                    fill_color.1,
+                    fill_color.2,
+                    fill_color.3,
+                ]);
+            }
+
+            if do_outline {
+                stroke_vertex_data.extend_from_slice(&[
+                    transformed_position[0],
+                    transformed_position[1],
+                    stroke_color.0,
+                    stroke_color.1,
+                    stroke_color.2,
+                    stroke_color.3,
+                ]);
+            }
+        }
+
+        if do_fill {
+            self.data.push(VertexData::Polygon(PolygonFillData {
+                vertices: fill_vertex_data,
+                fill_sequence: fill_element_data,
+            }));
+        }
+
+        if do_outline {
+            self.append_combined_data(
+                gl::LINE_LOOP,
+                &stroke_vertex_data,
+                polygon.points.len() as u32,
+                false,
+            );
         }
     }
 }
 
-struct VertexArray {
+struct CombinedVertexArray {
     array_index: GLuint,
     buffer_index: GLuint,
     data_types: Vec<(GLenum, u32)>,
 }
 
-impl VertexArray {
-    fn from_svg(svg_object: &SVG) -> Self {
-        let vertices = VertexExtractor::from_svg_vertices(svg_object);
-
-        let mut vertex_array = Self {
-            array_index: 0,
-            buffer_index: 0,
-            data_types: vertices.data_types,
-        };
-
-        unsafe {
-            gl::GenVertexArrays(1, &mut vertex_array.array_index);
-            gl::BindVertexArray(vertex_array.array_index);
-
-            gl::GenBuffers(1, &mut vertex_array.buffer_index);
-            gl::BindBuffer(gl::ARRAY_BUFFER, vertex_array.buffer_index);
-            gl::BufferData(
-                gl::ARRAY_BUFFER,
-                (vertices.data.len() * std::mem::size_of::<f32>()) as gl::types::GLsizeiptr,
-                vertices.data.as_ptr() as *const c_void,
-                gl::STATIC_DRAW,
-            );
+impl CombinedVertexArray {
+    unsafe fn render(&self, shaders: &ShadersAndProgram) {
+        gl::BindVertexArray(self.array_index);
+        gl::BindBuffer(gl::ARRAY_BUFFER, self.buffer_index);
+        let mut total_drawn: u32 = 0;
+        for (data_type, count) in self.data_types.iter() {
+            gl::DrawArrays(*data_type, total_drawn as GLint, *count as GLsizei);
+            total_drawn += *count;
         }
 
-        vertex_array
+        shaders.bind_attributes_to_vertex_array();
     }
+}
 
-    fn render(&self) {
+impl Drop for CombinedVertexArray {
+    fn drop(&mut self) {
         unsafe {
-            gl::BindVertexArray(self.array_index);
-
-            let mut total_drawn: u32 = 0;
-            for (data_type, count) in self.data_types.iter() {
-                gl::DrawArrays(*data_type, total_drawn as GLint, *count as GLsizei);
-                total_drawn += *count;
-            }
+            gl::DeleteBuffers(1, &self.buffer_index);
+            gl::DeleteVertexArrays(1, &self.array_index);
         }
     }
 }
 
-impl Drop for VertexArray {
+struct ElementVertexArray {
+    array_index: GLuint,
+    buffer_index: GLuint,
+    element_buffer_index: GLuint,
+    num_elements: u32,
+}
+
+impl ElementVertexArray {
+    unsafe fn render(&self, shaders: &ShadersAndProgram) {
+        gl::BindVertexArray(self.array_index);
+        gl::BindBuffer(gl::ARRAY_BUFFER, self.buffer_index);
+        gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.element_buffer_index);
+        gl::DrawElements(
+            gl::TRIANGLES,
+            self.num_elements as GLsizei,
+            gl::UNSIGNED_INT,
+            std::ptr::null(),
+        );
+
+        shaders.bind_attributes_to_vertex_array();
+    }
+}
+
+impl Drop for ElementVertexArray {
     fn drop(&mut self) {
         unsafe {
-            gl::DeleteBuffers(1, &mut self.buffer_index);
-            gl::DeleteVertexArrays(1, &mut self.array_index);
+            gl::DeleteBuffers(1, &self.element_buffer_index);
+            gl::DeleteBuffers(1, &self.buffer_index);
+            gl::DeleteVertexArrays(1, &self.array_index);
+        }
+    }
+}
+
+enum VertexArray {
+    Combined(CombinedVertexArray),
+    Element(ElementVertexArray),
+}
+
+impl VertexArray {
+    fn gen_from_svg(svg_object: &SVG) -> Vec<Self> {
+        let vertices = VertexExtractor::from_svg_vertices(svg_object);
+
+        let mut vertex_arrays = Vec::new();
+
+        vertex_arrays.reserve_exact(vertices.data.len());
+
+        for vertex_data in vertices.data.into_iter() {
+            match vertex_data {
+                VertexData::Combined(combined_data) => {
+                    let mut combined_buffer = CombinedVertexArray {
+                        array_index: 0,
+                        buffer_index: 0,
+                        data_types: combined_data.data_types,
+                    };
+
+                    unsafe {
+                        gl::GenVertexArrays(1, &mut combined_buffer.array_index);
+                        gl::BindVertexArray(combined_buffer.array_index);
+
+                        gl::GenBuffers(1, &mut combined_buffer.buffer_index);
+                        gl::BindBuffer(gl::ARRAY_BUFFER, combined_buffer.buffer_index);
+                        gl::BufferData(
+                            gl::ARRAY_BUFFER,
+                            (combined_data.data.len() * std::mem::size_of::<f32>())
+                                as gl::types::GLsizeiptr,
+                            combined_data.data.as_ptr() as *const c_void,
+                            gl::STATIC_DRAW,
+                        );
+                    }
+
+                    vertex_arrays.push(VertexArray::Combined(combined_buffer));
+                }
+                VertexData::Polygon(polygon_data) => {
+                    let mut element_buffer = ElementVertexArray {
+                        array_index: 0,
+                        buffer_index: 0,
+                        element_buffer_index: 0,
+                        num_elements: polygon_data.fill_sequence.len() as u32,
+                    };
+
+                    unsafe {
+                        gl::GenVertexArrays(1, &mut element_buffer.array_index);
+                        gl::BindVertexArray(element_buffer.array_index);
+
+                        gl::GenBuffers(1, &mut element_buffer.buffer_index);
+                        gl::BindBuffer(gl::ARRAY_BUFFER, element_buffer.buffer_index);
+                        gl::BufferData(
+                            gl::ARRAY_BUFFER,
+                            (polygon_data.vertices.len() * std::mem::size_of::<f32>())
+                                as gl::types::GLsizeiptr,
+                            polygon_data.vertices.as_ptr() as *const c_void,
+                            gl::STATIC_DRAW,
+                        );
+
+                        gl::GenBuffers(1, &mut element_buffer.element_buffer_index);
+                        gl::BindBuffer(
+                            gl::ELEMENT_ARRAY_BUFFER,
+                            element_buffer.element_buffer_index,
+                        );
+                        gl::BufferData(
+                            gl::ELEMENT_ARRAY_BUFFER,
+                            (polygon_data.fill_sequence.len() * std::mem::size_of::<GLuint>())
+                                as gl::types::GLsizeiptr,
+                            polygon_data.fill_sequence.as_ptr() as *const c_void,
+                            gl::STATIC_DRAW,
+                        );
+                    }
+
+                    vertex_arrays.push(VertexArray::Element(element_buffer))
+                }
+            }
+        }
+
+        vertex_arrays
+    }
+
+    fn render(&self, shaders: &ShadersAndProgram) {
+        unsafe {
+            match self {
+                VertexArray::Combined(combined_buffer) => {
+                    combined_buffer.render(shaders);
+                }
+                VertexArray::Element(element_buffer) => {
+                    element_buffer.render(shaders);
+                }
+            }
         }
     }
 }
@@ -577,8 +789,7 @@ impl GLRenderer {
 
         let mut vertex_arrays = Vec::new();
         for object in object_mgr.get_objects() {
-            vertex_arrays.push(VertexArray::from_svg(&object.svg_inst));
-            shaders.bind_attributes_to_vertex_array()?;
+            vertex_arrays.extend(VertexArray::gen_from_svg(&object.svg_inst));
         }
 
         let gl_renderer = Self {
@@ -593,7 +804,7 @@ impl GLRenderer {
     }
 
     fn render_object(&self, vertex_array: &VertexArray) {
-        vertex_array.render();
+        vertex_array.render(&self.shaders);
     }
 }
 
