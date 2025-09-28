@@ -191,31 +191,27 @@ impl ShadersAndProgram {
         }
     }
 
-    fn bind_attributes_to_vertex_array(&self) {
-        unsafe {
-            gl::VertexAttribPointer(
-                self.position_attr as gl::types::GLuint,
-                POS_SIZE as GLint,
-                gl::FLOAT,
-                gl::FALSE,
-                ((POS_SIZE + COLOR_SIZE) as usize * std::mem::size_of::<f32>())
-                    as gl::types::GLsizei,
-                std::ptr::null(),
-            );
+    unsafe fn bind_attributes_to_vertex_array(&self) {
+        gl::VertexAttribPointer(
+            self.position_attr as gl::types::GLuint,
+            POS_SIZE as GLint,
+            gl::FLOAT,
+            gl::FALSE,
+            ((POS_SIZE + COLOR_SIZE) as usize * std::mem::size_of::<f32>()) as gl::types::GLsizei,
+            std::ptr::null(),
+        );
 
-            gl::VertexAttribPointer(
-                self.color_attr as gl::types::GLuint,
-                COLOR_SIZE as GLint,
-                gl::FLOAT,
-                gl::FALSE,
-                ((POS_SIZE + COLOR_SIZE) as usize * std::mem::size_of::<f32>())
-                    as gl::types::GLsizei,
-                (POS_SIZE as usize * std::mem::size_of::<f32>()) as *const c_void,
-            );
+        gl::VertexAttribPointer(
+            self.color_attr as gl::types::GLuint,
+            COLOR_SIZE as GLint,
+            gl::FLOAT,
+            gl::FALSE,
+            ((POS_SIZE + COLOR_SIZE) as usize * std::mem::size_of::<f32>()) as gl::types::GLsizei,
+            (POS_SIZE as usize * std::mem::size_of::<f32>()) as *const c_void,
+        );
 
-            gl::EnableVertexAttribArray(self.position_attr as gl::types::GLuint);
-            gl::EnableVertexAttribArray(self.color_attr as gl::types::GLuint);
-        }
+        gl::EnableVertexAttribArray(self.position_attr as gl::types::GLuint);
+        gl::EnableVertexAttribArray(self.color_attr as gl::types::GLuint);
     }
 
     fn update_uniform(&self, norm_to_viewer_transform: &Matrix3x3<f32>) {
@@ -513,7 +509,7 @@ struct CombinedVertexArray {
 }
 
 impl CombinedVertexArray {
-    unsafe fn render(&self, shaders: &ShadersAndProgram) {
+    unsafe fn render(&self) {
         gl::BindVertexArray(self.array_index);
         gl::BindBuffer(gl::ARRAY_BUFFER, self.buffer_index);
         let mut total_drawn: u32 = 0;
@@ -521,8 +517,6 @@ impl CombinedVertexArray {
             gl::DrawArrays(*data_type, total_drawn as GLint, *count as GLsizei);
             total_drawn += *count;
         }
-
-        shaders.bind_attributes_to_vertex_array();
     }
 }
 
@@ -543,7 +537,7 @@ struct ElementVertexArray {
 }
 
 impl ElementVertexArray {
-    unsafe fn render(&self, shaders: &ShadersAndProgram) {
+    unsafe fn render(&self) {
         gl::BindVertexArray(self.array_index);
         gl::BindBuffer(gl::ARRAY_BUFFER, self.buffer_index);
         gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.element_buffer_index);
@@ -553,8 +547,6 @@ impl ElementVertexArray {
             gl::UNSIGNED_INT,
             std::ptr::null(),
         );
-
-        shaders.bind_attributes_to_vertex_array();
     }
 }
 
@@ -574,7 +566,7 @@ enum VertexArray {
 }
 
 impl VertexArray {
-    fn gen_from_svg(svg_object: &SVG) -> Vec<Self> {
+    fn gen_from_svg(svg_object: &SVG, shaders: &ShadersAndProgram) -> Vec<Self> {
         let vertices = VertexExtractor::from_svg_vertices(svg_object);
 
         let mut vertex_arrays = Vec::new();
@@ -603,6 +595,8 @@ impl VertexArray {
                             combined_data.data.as_ptr() as *const c_void,
                             gl::STATIC_DRAW,
                         );
+
+                        shaders.bind_attributes_to_vertex_array();
                     }
 
                     vertex_arrays.push(VertexArray::Combined(combined_buffer));
@@ -641,6 +635,8 @@ impl VertexArray {
                             polygon_data.fill_sequence.as_ptr() as *const c_void,
                             gl::STATIC_DRAW,
                         );
+
+                        shaders.bind_attributes_to_vertex_array();
                     }
 
                     vertex_arrays.push(VertexArray::Element(element_buffer))
@@ -651,14 +647,14 @@ impl VertexArray {
         vertex_arrays
     }
 
-    fn render(&self, shaders: &ShadersAndProgram) {
+    fn render(&self) {
         unsafe {
             match self {
                 VertexArray::Combined(combined_buffer) => {
-                    combined_buffer.render(shaders);
+                    combined_buffer.render();
                 }
                 VertexArray::Element(element_buffer) => {
-                    element_buffer.render(shaders);
+                    element_buffer.render();
                 }
             }
         }
@@ -789,7 +785,7 @@ impl GLRenderer {
 
         let mut vertex_arrays = Vec::new();
         for object in object_mgr.get_objects() {
-            vertex_arrays.extend(VertexArray::gen_from_svg(&object.svg_inst));
+            vertex_arrays.extend(VertexArray::gen_from_svg(&object.svg_inst, &shaders));
         }
 
         let gl_renderer = Self {
@@ -804,7 +800,7 @@ impl GLRenderer {
     }
 
     fn render_object(&self, vertex_array: &VertexArray) {
-        vertex_array.render(&self.shaders);
+        vertex_array.render();
     }
 }
 
