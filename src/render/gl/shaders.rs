@@ -1,70 +1,81 @@
 use core::ffi::{c_void, CStr};
-use gl::types::{GLchar, GLenum, GLint, GLsizei, GLuint};
+use gl::types::{GLchar, GLenum, GLint, GLuint};
 
 use crate::matrix::Matrix3x3;
 
 pub const POS_SIZE: u8 = 2;
 pub const COLOR_SIZE: u8 = 4;
 
-unsafe fn maybe_get_gl_error() -> Result<(), String> {
-    let error = gl::GetError();
-    if error != gl::NO_ERROR {
-        return Err(format!("Error code: {error}"));
+pub enum Shader {
+    Basic,
+    Line,
+}
+
+pub struct ShaderMgr {
+    basic_shader: BasicShader,
+    line_shader: LineShader,
+    active_shader: Shader,
+}
+
+impl ShaderMgr {
+    pub fn new() -> Result<Self, String> {
+        Ok(Self {
+            basic_shader: BasicShader::build()?,
+            line_shader: LineShader::build()?,
+            active_shader: Shader::Basic,
+        })
     }
 
-    Ok(())
-}
-
-unsafe fn maybe_get_shader_compile_error(shader_id: GLuint) -> Result<(), String> {
-    let mut compile_status: GLint = 0;
-    gl::GetShaderiv(shader_id, gl::COMPILE_STATUS, &mut compile_status);
-
-    if compile_status != gl::TRUE as GLint {
-        const BUF_SIZE: i32 = 512;
-        let mut buffer = [0 as GLchar; BUF_SIZE as usize];
-        gl::GetShaderInfoLog(
-            shader_id,
-            BUF_SIZE,
-            std::ptr::null_mut(),
-            buffer.as_mut_ptr(),
-        );
-        let c_slice = CStr::from_ptr(buffer.as_ptr());
-        return Err(c_slice.to_string_lossy().into_owned());
+    pub unsafe fn activate(&mut self, shader: Shader) {
+        match shader {
+            Shader::Basic => self.basic_shader.activate(),
+            Shader::Line => self.line_shader.activate(),
+        }
+        self.active_shader = shader;
     }
 
-    Ok(())
+    pub unsafe fn bind_attributes_to_vertex_array(&self) {
+        match self.active_shader {
+            Shader::Basic => self.basic_shader.bind_attributes_to_vertex_array(),
+            Shader::Line => self.line_shader.bind_attributes_to_vertex_array(),
+        }
+    }
+
+    pub unsafe fn update_norm_to_viewer(&self, norm_to_viewer_transform: &Matrix3x3<f32>) {
+        self.basic_shader
+            .update_norm_to_viewer(norm_to_viewer_transform);
+        self.line_shader
+            .update_norm_to_viewer(norm_to_viewer_transform);
+    }
+
+    pub unsafe fn set_line_thickness(&self, thickness: f32) {
+        match self.active_shader {
+            Shader::Line => self.line_shader.update_line_thickness(thickness),
+            _ => panic!("Tried to update line thickness on a shader that does not support it."),
+        }
+    }
 }
 
-unsafe fn send_and_compile_shader(
-    shader_type: GLenum,
-    shader_source: &CStr,
-) -> Result<GLuint, String> {
-    let shader_id = gl::CreateShader(shader_type);
-
-    gl::ShaderSource(
-        shader_id,
-        1,
-        [shader_source].as_ptr() as *const *const GLchar,
-        std::ptr::null(),
-    );
-
-    gl::CompileShader(shader_id);
-
-    maybe_get_shader_compile_error(shader_id)?;
-
-    Ok(shader_id)
-}
-
-pub trait ShaderProgram {
+trait ShaderProgram {
     fn build() -> Result<Self, String>
     where
         Self: Sized;
 
     unsafe fn bind_attributes_to_vertex_array(&self);
     unsafe fn activate(&self);
+
+    fn get_norm_to_viewer_uniform(&self) -> GLint;
+    unsafe fn update_norm_to_viewer(&self, norm_to_viewer_transform: &Matrix3x3<f32>) {
+        gl::UniformMatrix3fv(
+            self.get_norm_to_viewer_uniform(),
+            1,
+            gl::TRUE,
+            <&Matrix3x3<f32> as Into<&[[f32; 3]; 3]>>::into(norm_to_viewer_transform)[0].as_ptr(),
+        );
+    }
 }
 
-pub struct LineShader {
+struct LineShader {
     vertex_shader: GLuint,
     fragment_shader: GLuint,
     geometry_shader: GLuint,
@@ -146,76 +157,36 @@ void main() {
 }
 
 impl LineShader {
-    unsafe fn create_new_program(
-        vertex_shader: GLuint,
-        fragment_shader: GLuint,
-        geometry_shader: GLuint,
-    ) -> Result<GLuint, String> {
-        let shader_program = gl::CreateProgram();
-        gl::AttachShader(shader_program, vertex_shader);
-        gl::AttachShader(shader_program, fragment_shader);
-        gl::AttachShader(shader_program, geometry_shader);
-
-        maybe_get_gl_error()?;
-
-        Ok(shader_program)
-    }
-
-    unsafe fn bind_fragment_shader_output(shader_program: GLuint) -> Result<(), String> {
-        gl::BindFragDataLocation(shader_program, 0, c"outColor".as_ptr());
+    unsafe fn bind_fragment_shader_output(&self) -> Result<(), String> {
+        gl::BindFragDataLocation(self.shader_program, 0, c"outColor".as_ptr());
 
         maybe_get_gl_error()?;
 
         Ok(())
     }
 
-    unsafe fn link_program(shader_program: GLuint) -> Result<(), String> {
-        gl::LinkProgram(shader_program);
-
+    unsafe fn record_attribute_locations(&mut self) -> Result<(), String> {
+        let position_attribute = gl::GetAttribLocation(self.shader_program, c"position".as_ptr());
         maybe_get_gl_error()?;
+        self.position_attr = position_attribute as GLuint;
 
-        Ok(())
-    }
-
-    unsafe fn get_attributes(
-        shader_program: GLuint,
-    ) -> Result<(GLuint, GLuint, GLuint, GLuint), String> {
-        let position_attribute = gl::GetAttribLocation(shader_program, c"position".as_ptr());
-
+        let color_attribute = gl::GetAttribLocation(self.shader_program, c"color".as_ptr());
         maybe_get_gl_error()?;
-
-        let color_attribute = gl::GetAttribLocation(shader_program, c"color".as_ptr());
-
-        maybe_get_gl_error()?;
+        self.color_attr = color_attribute as GLuint;
 
         let norm_to_viewer_uniform =
-            gl::GetUniformLocation(shader_program, c"norm_to_viewer".as_ptr());
-
-        let line_thickness_uniform = gl::GetUniformLocation(shader_program, c"thickness".as_ptr());
-
+            gl::GetUniformLocation(self.shader_program, c"norm_to_viewer".as_ptr());
         maybe_get_gl_error()?;
+        self.norm_to_viewer_uniform = norm_to_viewer_uniform as GLuint;
 
-        Ok((
-            position_attribute as GLuint,
-            color_attribute as GLuint,
-            norm_to_viewer_uniform as GLuint,
-            line_thickness_uniform as GLuint,
-        ))
+        let thickness_uniform = gl::GetUniformLocation(self.shader_program, c"thickness".as_ptr());
+        maybe_get_gl_error()?;
+        self.line_thickness_uniform = thickness_uniform as GLuint;
+
+        Ok(())
     }
 
-    pub fn update_norm_to_viewer(&self, norm_to_viewer_transform: &Matrix3x3<f32>) {
-        unsafe {
-            gl::UniformMatrix3fv(
-                self.norm_to_viewer_uniform as GLint,
-                1,
-                gl::TRUE,
-                <&Matrix3x3<f32> as Into<&[[f32; 3]; 3]>>::into(norm_to_viewer_transform)[0]
-                    .as_ptr(),
-            );
-        }
-    }
-
-    pub fn update_line_thickness(&self, thickness: f32) {
+    fn update_line_thickness(&self, thickness: f32) {
         unsafe {
             gl::Uniform1f(self.line_thickness_uniform as GLint, thickness);
         }
@@ -225,35 +196,38 @@ impl LineShader {
 impl ShaderProgram for LineShader {
     fn build() -> Result<LineShader, String> {
         unsafe {
-            let vertex_shader =
-                send_and_compile_shader(gl::VERTEX_SHADER, LineShader::VERTEX_SHADER)?;
-            let fragment_shader =
-                send_and_compile_shader(gl::FRAGMENT_SHADER, LineShader::FRAGMENT_SHADER)?;
-            let geometry_shader =
-                send_and_compile_shader(gl::GEOMETRY_SHADER, LineShader::GEOMETRY_SHADER)?;
+            let shader_program = create_program()?;
+            let vertex_shader = send_compile_and_attach_shader(
+                gl::VERTEX_SHADER,
+                LineShader::VERTEX_SHADER,
+                shader_program,
+            )?;
+            let fragment_shader = send_compile_and_attach_shader(
+                gl::FRAGMENT_SHADER,
+                LineShader::FRAGMENT_SHADER,
+                shader_program,
+            )?;
+            let geometry_shader = send_compile_and_attach_shader(
+                gl::GEOMETRY_SHADER,
+                LineShader::GEOMETRY_SHADER,
+                shader_program,
+            )?;
 
-            let shader_program =
-                LineShader::create_new_program(vertex_shader, fragment_shader, geometry_shader)?;
+            link_program(shader_program)?;
 
-            LineShader::bind_fragment_shader_output(shader_program)?;
-
-            LineShader::link_program(shader_program)?;
-
-            let (position_attr, color_attr, norm_to_viewer_uniform, line_thickness_uniform) =
-                LineShader::get_attributes(shader_program)?;
-
-            let shader = LineShader {
+            let mut shader = LineShader {
                 vertex_shader,
                 fragment_shader,
                 geometry_shader,
                 shader_program,
-                position_attr,
-                color_attr,
-                norm_to_viewer_uniform,
-                line_thickness_uniform,
+                position_attr: 0,
+                color_attr: 0,
+                norm_to_viewer_uniform: 0,
+                line_thickness_uniform: 0,
             };
 
-            shader.activate();
+            shader.record_attribute_locations()?;
+            shader.bind_fragment_shader_output()?;
 
             Ok(shader)
         }
@@ -285,6 +259,10 @@ impl ShaderProgram for LineShader {
     unsafe fn activate(&self) {
         gl::UseProgram(self.shader_program);
     }
+
+    fn get_norm_to_viewer_uniform(&self) -> GLint {
+        self.norm_to_viewer_uniform as GLint
+    }
 }
 
 impl Drop for LineShader {
@@ -296,4 +274,213 @@ impl Drop for LineShader {
             gl::DeleteShader(self.geometry_shader);
         }
     }
+}
+
+struct BasicShader {
+    vertex_shader: GLuint,
+    fragment_shader: GLuint,
+    shader_program: GLuint,
+    position_attr: GLuint,
+    color_attr: GLuint,
+    norm_to_viewer_uniform: GLuint,
+}
+
+impl BasicShader {
+    const VERTEX_SHADER: &CStr = c"#version 150 core
+
+in vec2 position;
+in vec4 color;
+
+uniform mat3 norm_to_viewer;
+
+out vec4 Color;
+
+void main() {
+    Color = color;
+    vec3 transformed_position = vec3(position, 1.0) * norm_to_viewer;
+    gl_Position = vec4(transformed_position.x, -transformed_position.y, 0.0, 1.0);
+}";
+
+    const FRAGMENT_SHADER: &CStr = c"#version 150 core
+
+in vec4 Color;
+
+out vec4 outColor;
+
+void main()
+{
+    outColor = Color;
+}";
+}
+
+impl BasicShader {
+    unsafe fn bind_fragment_shader_output(&self) -> Result<(), String> {
+        gl::BindFragDataLocation(self.shader_program, 0, c"outColor".as_ptr());
+
+        maybe_get_gl_error()?;
+
+        Ok(())
+    }
+
+    unsafe fn record_attribute_locations(&mut self) -> Result<(), String> {
+        let position_attribute = gl::GetAttribLocation(self.shader_program, c"position".as_ptr());
+        maybe_get_gl_error()?;
+        self.position_attr = position_attribute as GLuint;
+
+        let color_attribute = gl::GetAttribLocation(self.shader_program, c"color".as_ptr());
+        maybe_get_gl_error()?;
+        self.color_attr = color_attribute as GLuint;
+
+        let norm_to_viewer_uniform =
+            gl::GetUniformLocation(self.shader_program, c"norm_to_viewer".as_ptr());
+        maybe_get_gl_error()?;
+        self.norm_to_viewer_uniform = norm_to_viewer_uniform as GLuint;
+
+        Ok(())
+    }
+}
+
+impl ShaderProgram for BasicShader {
+    fn build() -> Result<BasicShader, String> {
+        unsafe {
+            let shader_program = create_program()?;
+            let vertex_shader = send_compile_and_attach_shader(
+                gl::VERTEX_SHADER,
+                BasicShader::VERTEX_SHADER,
+                shader_program,
+            )?;
+            let fragment_shader = send_compile_and_attach_shader(
+                gl::FRAGMENT_SHADER,
+                BasicShader::FRAGMENT_SHADER,
+                shader_program,
+            )?;
+
+            link_program(shader_program)?;
+
+            let mut shader = BasicShader {
+                vertex_shader,
+                fragment_shader,
+                shader_program,
+                position_attr: 0,
+                color_attr: 0,
+                norm_to_viewer_uniform: 0,
+            };
+
+            shader.record_attribute_locations()?;
+            shader.bind_fragment_shader_output()?;
+
+            Ok(shader)
+        }
+    }
+
+    unsafe fn bind_attributes_to_vertex_array(&self) {
+        gl::VertexAttribPointer(
+            self.position_attr as gl::types::GLuint,
+            POS_SIZE as GLint,
+            gl::FLOAT,
+            gl::FALSE,
+            ((POS_SIZE + COLOR_SIZE) as usize * std::mem::size_of::<f32>()) as gl::types::GLsizei,
+            std::ptr::null(),
+        );
+
+        gl::VertexAttribPointer(
+            self.color_attr as gl::types::GLuint,
+            COLOR_SIZE as GLint,
+            gl::FLOAT,
+            gl::FALSE,
+            ((POS_SIZE + COLOR_SIZE) as usize * std::mem::size_of::<f32>()) as gl::types::GLsizei,
+            (POS_SIZE as usize * std::mem::size_of::<f32>()) as *const c_void,
+        );
+
+        gl::EnableVertexAttribArray(self.position_attr as gl::types::GLuint);
+        gl::EnableVertexAttribArray(self.color_attr as gl::types::GLuint);
+    }
+
+    unsafe fn activate(&self) {
+        gl::UseProgram(self.shader_program);
+    }
+
+    fn get_norm_to_viewer_uniform(&self) -> GLint {
+        self.norm_to_viewer_uniform as GLint
+    }
+}
+
+impl Drop for BasicShader {
+    fn drop(&mut self) {
+        unsafe {
+            gl::DeleteProgram(self.shader_program);
+            gl::DeleteShader(self.fragment_shader);
+            gl::DeleteShader(self.vertex_shader);
+        }
+    }
+}
+
+unsafe fn maybe_get_gl_error() -> Result<(), String> {
+    let error = gl::GetError();
+    if error != gl::NO_ERROR {
+        return Err(format!("Error code: {error}"));
+    }
+
+    Ok(())
+}
+
+unsafe fn maybe_get_shader_compile_error(shader_id: GLuint) -> Result<(), String> {
+    let mut compile_status: GLint = 0;
+    gl::GetShaderiv(shader_id, gl::COMPILE_STATUS, &mut compile_status);
+
+    if compile_status != gl::TRUE as GLint {
+        const BUF_SIZE: i32 = 512;
+        let mut buffer = [0 as GLchar; BUF_SIZE as usize];
+        gl::GetShaderInfoLog(
+            shader_id,
+            BUF_SIZE,
+            std::ptr::null_mut(),
+            buffer.as_mut_ptr(),
+        );
+        let c_slice = CStr::from_ptr(buffer.as_ptr());
+        return Err(c_slice.to_string_lossy().into_owned());
+    }
+
+    Ok(())
+}
+
+unsafe fn send_compile_and_attach_shader(
+    shader_type: GLenum,
+    shader_source: &CStr,
+    shader_program: GLuint,
+) -> Result<GLuint, String> {
+    let shader_id = gl::CreateShader(shader_type);
+
+    gl::ShaderSource(
+        shader_id,
+        1,
+        [shader_source].as_ptr() as *const *const GLchar,
+        std::ptr::null(),
+    );
+
+    gl::CompileShader(shader_id);
+
+    maybe_get_shader_compile_error(shader_id)?;
+
+    gl::AttachShader(shader_program, shader_id);
+
+    maybe_get_gl_error()?;
+
+    Ok(shader_id)
+}
+
+unsafe fn create_program() -> Result<GLuint, String> {
+    let shader_program = gl::CreateProgram();
+
+    maybe_get_gl_error()?;
+
+    Ok(shader_program)
+}
+
+unsafe fn link_program(shader_program: GLuint) -> Result<(), String> {
+    gl::LinkProgram(shader_program);
+
+    maybe_get_gl_error()?;
+
+    Ok(())
 }
