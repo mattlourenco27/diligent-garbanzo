@@ -103,6 +103,9 @@ fn is_simple_polygon(polygon: &[Vector2D<f32>]) -> bool {
             }
         };
 
+    let edges_are_adjacent =
+        |e1: usize, e2: usize| e1 == (e2 + 1) % polygon.len() || e2 == (e1 + 1) % polygon.len();
+
     for event in events {
         remove_passed_vertical_edges(
             &mut active_edges,
@@ -130,9 +133,6 @@ fn is_simple_polygon(polygon: &[Vector2D<f32>]) -> bool {
         let curr_edge_a = curr_node1[1] - curr_node0[1];
         let curr_edge_b = curr_node0[0] - curr_node1[0];
         let curr_edge_c = -curr_edge_a * curr_node0[0] - curr_edge_b * curr_node0[1];
-
-        let edges_are_adjacent =
-            |e1: usize, e2: usize| e1 == (e2 + 1) % polygon.len() || e2 == (e1 + 1) % polygon.len();
 
         for test_edge in active_edges.iter() {
             if edges_are_adjacent(*test_edge, event.edge) {
@@ -295,15 +295,15 @@ fn triangulate_by_ear_clipping(polygon: &[Vector2D<f32>]) -> Option<Vec<[usize; 
             }
 
             let mut is_ear = true;
-            for &v in &vertices {
+            for v in 0..vertices.len() {
                 if v == prev_idx || v == curr_idx || v == next_idx {
                     continue;
                 }
 
                 let point_is_in_triangle = if is_wound_counter_clockwise {
-                    is_point_in_triangle(&polygon[v], prev, curr, next)
+                    is_point_in_triangle(&polygon[vertices[v]], prev, curr, next)
                 } else {
-                    is_point_in_triangle(&polygon[v], next, curr, prev)
+                    is_point_in_triangle(&polygon[vertices[v]], next, curr, prev)
                 };
 
                 if point_is_in_triangle {
