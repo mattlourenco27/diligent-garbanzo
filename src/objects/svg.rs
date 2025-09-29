@@ -13,7 +13,7 @@ use quick_xml::{
 use regex::Regex;
 use sdl2::pixels::Color;
 
-use crate::{matrix::Matrix3x3, texture::Texture, vector::{Vector2D, Vector3D}};
+use crate::{matrix::Matrix3x3, texture::Texture, vector::Vector2D};
 
 pub type Transform = Matrix3x3<f32>;
 
@@ -703,10 +703,6 @@ impl Style {
         }
 
         Ok(parent_style)
-    }
-
-    pub fn apply_transform(&self, point: &Vector2D<f32>) -> Vector3D<f32> {
-        &self.transform * Vector3D::from_vector(point)
     }
 }
 

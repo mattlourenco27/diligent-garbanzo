@@ -70,6 +70,26 @@ impl ShaderMgr {
         }
     }
 
+    pub unsafe fn set_svg_transform(&mut self, svg_transform: Matrix3x3<f32>) {
+        match self.active_shader {
+            Shader::Basic => self
+                .basic_shader
+                .attributes
+                .svg_transform
+                .update(svg_transform),
+            Shader::Line => self
+                .line_shader
+                .attributes
+                .svg_transform
+                .update(svg_transform),
+            Shader::LineAdjacency => self
+                .line_adjacency_shader
+                .attributes
+                .svg_transform
+                .update(svg_transform),
+        }
+    }
+
     pub unsafe fn set_line_thickness(&mut self, thickness: f32) {
         match self.active_shader {
             Shader::Line => self.line_shader.attributes.thickness.update(thickness),
@@ -166,6 +186,7 @@ struct BasicAttributes {
     position: GLuint,
     color: GLuint,
     norm_to_viewer: Uniform<Matrix3x3<f32>>,
+    svg_transform: Uniform<Matrix3x3<f32>>,
 }
 
 impl Attributes for BasicAttributes {
@@ -189,11 +210,18 @@ impl BasicAttributes {
         let norm_to_viewer = gl::GetUniformLocation(shader_program, c"norm_to_viewer".as_ptr());
         maybe_get_gl_error()?;
 
+        let svg_transform = gl::GetUniformLocation(shader_program, c"svg_transform".as_ptr());
+        maybe_get_gl_error()?;
+
         Ok(BasicAttributes {
             position: position as GLuint,
             color: color as GLuint,
-            norm_to_viewer: Uniform::<Matrix3x3<f32>> {
+            norm_to_viewer: Uniform {
                 uniform_index: norm_to_viewer,
+                current_value: None,
+            },
+            svg_transform: Uniform {
+                uniform_index: svg_transform,
                 current_value: None,
             },
         })
@@ -204,6 +232,7 @@ struct LineAttributes {
     position: GLuint,
     color: GLuint,
     norm_to_viewer: Uniform<Matrix3x3<f32>>,
+    svg_transform: Uniform<Matrix3x3<f32>>,
     thickness: Uniform<f32>,
 }
 
@@ -228,17 +257,24 @@ impl LineAttributes {
         let norm_to_viewer = gl::GetUniformLocation(shader_program, c"norm_to_viewer".as_ptr());
         maybe_get_gl_error()?;
 
+        let svg_transform = gl::GetUniformLocation(shader_program, c"svg_transform".as_ptr());
+        maybe_get_gl_error()?;
+
         let thickness = gl::GetUniformLocation(shader_program, c"thickness".as_ptr());
         maybe_get_gl_error()?;
 
         Ok(LineAttributes {
             position: position as GLuint,
             color: color as GLuint,
-            norm_to_viewer: Uniform::<Matrix3x3<f32>> {
+            norm_to_viewer: Uniform {
                 uniform_index: norm_to_viewer,
                 current_value: None,
             },
-            thickness: Uniform::<f32> {
+            svg_transform: Uniform {
+                uniform_index: svg_transform,
+                current_value: None,
+            },
+            thickness: Uniform {
                 uniform_index: thickness,
                 current_value: None,
             },
@@ -287,9 +323,10 @@ out vec4 GeoColor;
 
 uniform float thickness;
 uniform mat3 norm_to_viewer;
+uniform mat3 svg_transform;
 
 void EmitTransformedVertex(in vec2 position) {
-    vec3 transformed = vec3(position, 1.0) * norm_to_viewer;
+    vec3 transformed = vec3(position, 1.0) * svg_transform * norm_to_viewer;
     gl_Position = vec4(transformed.x, -transformed.y, 0.0, 1.0);
     EmitVertex();
 }
@@ -422,9 +459,10 @@ out vec4 GeoColor;
 
 uniform float thickness;
 uniform mat3 norm_to_viewer;
+uniform mat3 svg_transform;
 
 void EmitTransformedVertex(in vec2 position) {
-    vec3 transformed = vec3(position, 1.0) * norm_to_viewer;
+    vec3 transformed = vec3(position, 1.0) * svg_transform * norm_to_viewer;
     gl_Position = vec4(transformed.x, -transformed.y, 0.0, 1.0);
     EmitVertex();
 }
@@ -537,12 +575,13 @@ in vec2 position;
 in vec4 color;
 
 uniform mat3 norm_to_viewer;
+uniform mat3 svg_transform;
 
 out vec4 Color;
 
 void main() {
     Color = color;
-    vec3 transformed_position = vec3(position, 1.0) * norm_to_viewer;
+    vec3 transformed_position = vec3(position, 1.0) * svg_transform * norm_to_viewer;
     gl_Position = vec4(transformed_position.x, -transformed_position.y, 0.0, 1.0);
 }";
 

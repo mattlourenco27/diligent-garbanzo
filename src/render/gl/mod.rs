@@ -38,24 +38,32 @@ enum RawOperationData {
     FillPolygon(PolygonFillData),
 }
 
-struct PointVertexData {
-    data: Vec<f32>,
+#[derive(PartialEq)]
+struct DrawPointParams {
+    transform: Matrix3x3<f32>,
 }
 
-struct DrawLineOp {
+struct PointVertexData {
+    data: Vec<f32>,
+    sequence: Vec<(DrawPointParams, u32)>,
+}
+
+#[derive(PartialEq)]
+struct DrawLineParams {
     draw_type: GLenum,
+    transform: Matrix3x3<f32>,
     thickness: f32,
-    num_vertices: u32,
 }
 
 struct LineVertexData {
     data: Vec<f32>,
-    sequence: Vec<DrawLineOp>,
+    sequence: Vec<(DrawLineParams, u32)>,
 }
 
 struct PolygonFillData {
     vertices: Vec<f32>,
     fill_sequence: Vec<GLuint>,
+    transform: Matrix3x3<f32>,
 }
 
 struct OperationExtractor {
@@ -111,7 +119,7 @@ impl OperationExtractor {
     }
 
     fn load_point(&mut self, point: &Point) {
-        let transformed_position = point.style.apply_transform(&point.position);
+        let position = &point.position;
 
         let color: GLColor = if point.style.fill_color == Style::DEFAULT.fill_color {
             point.style.stroke_color
@@ -124,31 +132,45 @@ impl OperationExtractor {
             return;
         }
 
-        let new_point_data = vec![
-            transformed_position[0],
-            transformed_position[1],
-            color.0,
-            color.1,
-            color.2,
-            color.3,
-        ];
+        self.extend_point_data(
+            &[position[0], position[1], color.0, color.1, color.2, color.3],
+            DrawPointParams {
+                transform: point.style.transform.clone().transpose_symmetric(),
+            },
+        );
+    }
 
-        match self.data.last_mut() {
-            Some(RawOperationData::DrawPoints(point_vertex_data)) => {
-                point_vertex_data.data.extend(new_point_data);
-            }
+    fn extend_point_data(&mut self, new_data: &[f32], params: DrawPointParams) {
+        let point_data = match self.data.last_mut() {
+            Some(RawOperationData::DrawPoints(point_data)) => point_data,
             _ => {
                 self.data
                     .push(RawOperationData::DrawPoints(PointVertexData {
-                        data: new_point_data,
+                        data: Vec::new(),
+                        sequence: Vec::new(),
                     }));
+                match self.data.last_mut() {
+                    Some(RawOperationData::DrawPoints(point_data)) => point_data,
+                    _ => panic!("Expected a DrawPoints operation."),
+                }
             }
         };
+
+        point_data.data.extend_from_slice(new_data);
+
+        match point_data.sequence.last_mut() {
+            Some((last_params, num_vertices)) if last_params == &params => {
+                *num_vertices += 1;
+            }
+            _ => {
+                point_data.sequence.push((params, 1));
+            }
+        }
     }
 
     fn load_line(&mut self, line: &Line) {
-        let transformed_p1 = line.style.apply_transform(&line.from);
-        let transformed_p2 = line.style.apply_transform(&line.to);
+        let p1 = &line.from;
+        let p2 = &line.to;
 
         let color: GLColor = if line.style.fill_color == Style::DEFAULT.fill_color {
             line.style.stroke_color
@@ -161,34 +183,21 @@ impl OperationExtractor {
             return;
         }
 
-        self.append_line_data(
-            gl::LINES,
-            line.style.stroke_width,
+        self.extend_line_data(
             &[
-                transformed_p1[0],
-                transformed_p1[1],
-                color.0,
-                color.1,
-                color.2,
-                color.3,
-                transformed_p2[0],
-                transformed_p2[1],
-                color.0,
-                color.1,
-                color.2,
-                color.3,
+                p1[0], p1[1], color.0, color.1, color.2, color.3, p2[0], p2[1], color.0, color.1,
+                color.2, color.3,
             ],
+            DrawLineParams {
+                draw_type: gl::LINES,
+                transform: line.style.transform.clone().transpose_symmetric(),
+                thickness: line.style.stroke_width,
+            },
             2,
         );
     }
 
-    fn append_line_data(
-        &mut self,
-        draw_type: GLenum,
-        thickness: f32,
-        new_data: &[f32],
-        num_vertices: u32,
-    ) {
+    fn extend_line_data(&mut self, new_data: &[f32], params: DrawLineParams, num_vertices: u32) {
         let line_data = match self.data.last_mut() {
             Some(RawOperationData::DrawLines(line_data)) => line_data,
             _ => {
@@ -198,7 +207,7 @@ impl OperationExtractor {
                 }));
                 match self.data.last_mut() {
                     Some(RawOperationData::DrawLines(line_data)) => line_data,
-                    _ => panic!("Just pushed a LineVertexData, so this should not be None"),
+                    _ => panic!("Expected a DrawLines operation."),
                 }
             }
         };
@@ -206,17 +215,11 @@ impl OperationExtractor {
         line_data.data.extend_from_slice(new_data);
 
         match line_data.sequence.last_mut() {
-            Some(last_draw_op)
-                if last_draw_op.draw_type == draw_type && last_draw_op.thickness == thickness =>
-            {
-                last_draw_op.num_vertices += num_vertices;
+            Some((last_params, last_num_vertices)) if last_params == &params => {
+                *last_num_vertices += num_vertices;
             }
             _ => {
-                line_data.sequence.push(DrawLineOp {
-                    draw_type,
-                    thickness,
-                    num_vertices,
-                });
+                line_data.sequence.push((params, num_vertices));
             }
         }
     }
@@ -266,10 +269,9 @@ impl OperationExtractor {
 
             // Push a copy of the last point to the front to give adjacency information for the first edge
             let last_point = polygon.points.last().unwrap();
-            let transformed_position = polygon.style.apply_transform(last_point);
             stroke_vertex_data.extend_from_slice(&[
-                transformed_position[0],
-                transformed_position[1],
+                last_point[0],
+                last_point[1],
                 stroke_color.0,
                 stroke_color.1,
                 stroke_color.2,
@@ -278,12 +280,10 @@ impl OperationExtractor {
         }
 
         for point in polygon.points.iter() {
-            let transformed_position = polygon.style.apply_transform(point);
-
             if do_fill {
                 fill_vertex_data.extend_from_slice(&[
-                    transformed_position[0],
-                    transformed_position[1],
+                    point[0],
+                    point[1],
                     fill_color.0,
                     fill_color.1,
                     fill_color.2,
@@ -293,8 +293,8 @@ impl OperationExtractor {
 
             if do_outline {
                 stroke_vertex_data.extend_from_slice(&[
-                    transformed_position[0],
-                    transformed_position[1],
+                    point[0],
+                    point[1],
                     stroke_color.0,
                     stroke_color.1,
                     stroke_color.2,
@@ -308,16 +308,16 @@ impl OperationExtractor {
                 .push(RawOperationData::FillPolygon(PolygonFillData {
                     vertices: fill_vertex_data,
                     fill_sequence: fill_element_data,
+                    transform: polygon.style.transform.clone().transpose_symmetric(),
                 }));
         }
 
         if do_outline {
             // Wrap around to include enough information to close the loop
             let first_point = &polygon.points[0];
-            let transformed_position = polygon.style.apply_transform(first_point);
             stroke_vertex_data.extend_from_slice(&[
-                transformed_position[0],
-                transformed_position[1],
+                first_point[0],
+                first_point[1],
                 stroke_color.0,
                 stroke_color.1,
                 stroke_color.2,
@@ -325,10 +325,9 @@ impl OperationExtractor {
             ]);
 
             let second_point = &polygon.points[1];
-            let transformed_position = polygon.style.apply_transform(second_point);
             stroke_vertex_data.extend_from_slice(&[
-                transformed_position[0],
-                transformed_position[1],
+                second_point[0],
+                second_point[1],
                 stroke_color.0,
                 stroke_color.1,
                 stroke_color.2,
@@ -338,21 +337,31 @@ impl OperationExtractor {
             match self.data.last_mut() {
                 Some(RawOperationData::DrawAdjacentLines(line_data)) => {
                     line_data.data.extend(stroke_vertex_data);
-                    line_data.sequence.push(DrawLineOp {
-                        draw_type: gl::LINE_STRIP_ADJACENCY,
-                        thickness: polygon.style.stroke_width,
-                        num_vertices: num_stroke_vertices as u32,
-                    });
+                    line_data.sequence.push((
+                        DrawLineParams {
+                            draw_type: gl::LINE_STRIP_ADJACENCY,
+                            transform: polygon.style.transform.clone().transpose_symmetric(),
+                            thickness: polygon.style.stroke_width,
+                        },
+                        num_stroke_vertices as u32,
+                    ));
                 }
                 _ => {
                     self.data
                         .push(RawOperationData::DrawAdjacentLines(LineVertexData {
                             data: stroke_vertex_data,
-                            sequence: vec![DrawLineOp {
-                                draw_type: gl::LINE_STRIP_ADJACENCY,
-                                thickness: polygon.style.stroke_width,
-                                num_vertices: num_stroke_vertices as u32,
-                            }],
+                            sequence: vec![(
+                                DrawLineParams {
+                                    draw_type: gl::LINE_STRIP_ADJACENCY,
+                                    transform: polygon
+                                        .style
+                                        .transform
+                                        .clone()
+                                        .transpose_symmetric(),
+                                    thickness: polygon.style.stroke_width,
+                                },
+                                num_stroke_vertices as u32,
+                            )],
                         }));
                 }
             };
@@ -363,7 +372,7 @@ impl OperationExtractor {
 struct PointArray {
     array_index: GLuint,
     buffer_index: GLuint,
-    num_points: u32,
+    sequence: Vec<(DrawPointParams, u32)>,
 }
 
 impl PointArray {
@@ -371,7 +380,12 @@ impl PointArray {
         shaders.activate(shaders::Shader::Basic);
         gl::BindVertexArray(self.array_index);
         gl::BindBuffer(gl::ARRAY_BUFFER, self.buffer_index);
-        gl::DrawArrays(gl::POINTS, 0 as GLint, self.num_points as GLsizei);
+        let mut total_drawn: u32 = 0;
+        for (params, num_points) in self.sequence.iter() {
+            shaders.set_svg_transform(params.transform.clone());
+            gl::DrawArrays(gl::POINTS, total_drawn as GLint, *num_points as GLsizei);
+            total_drawn += num_points;
+        }
     }
 }
 
@@ -387,7 +401,7 @@ impl Drop for PointArray {
 struct LineVertexArray {
     array_index: GLuint,
     buffer_index: GLuint,
-    sequence: Vec<DrawLineOp>,
+    sequence: Vec<(DrawLineParams, u32)>,
     is_adjacency: bool,
 }
 
@@ -401,14 +415,15 @@ impl LineVertexArray {
         gl::BindVertexArray(self.array_index);
         gl::BindBuffer(gl::ARRAY_BUFFER, self.buffer_index);
         let mut total_drawn: u32 = 0;
-        for draw_op in self.sequence.iter() {
-            shaders.set_line_thickness(draw_op.thickness);
+        for (params, num_vertices) in self.sequence.iter() {
+            shaders.set_svg_transform(params.transform.clone());
+            shaders.set_line_thickness(params.thickness);
             gl::DrawArrays(
-                draw_op.draw_type,
+                params.draw_type,
                 total_drawn as GLint,
-                draw_op.num_vertices as GLsizei,
+                *num_vertices as GLsizei,
             );
-            total_drawn += draw_op.num_vertices;
+            total_drawn += num_vertices;
         }
     }
 }
@@ -426,6 +441,7 @@ struct TriangleVertexArray {
     array_index: GLuint,
     buffer_index: GLuint,
     element_buffer_index: GLuint,
+    transform: Matrix3x3<f32>,
     num_elements: u32,
 }
 
@@ -435,6 +451,7 @@ impl TriangleVertexArray {
         gl::BindVertexArray(self.array_index);
         gl::BindBuffer(gl::ARRAY_BUFFER, self.buffer_index);
         gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.element_buffer_index);
+        shaders.set_svg_transform(self.transform.clone());
         gl::DrawElements(
             gl::TRIANGLES,
             self.num_elements as GLsizei,
@@ -475,7 +492,7 @@ impl Operation {
                     let mut point_array = PointArray {
                         array_index: 0,
                         buffer_index: 0,
-                        num_points: point_data.data.len() as u32,
+                        sequence: point_data.sequence,
                     };
 
                     unsafe {
@@ -562,6 +579,7 @@ impl Operation {
                         array_index: 0,
                         buffer_index: 0,
                         element_buffer_index: 0,
+                        transform: polygon_data.transform,
                         num_elements: polygon_data.fill_sequence.len() as u32,
                     };
 
