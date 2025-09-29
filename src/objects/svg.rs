@@ -728,10 +728,11 @@ fn read_next_event(
         }
         // Event::Text(event) => unimplemented!(),
         Event::End(end_tag_bytes) => {
+            let tag = EndTag::from_end_tag_bytes(end_tag_bytes)?;
             if style_lifo.pop().is_none() {
                 return Err(EventStatus::Error(ReadError::EndTagBeforeStart));
             }
-            Ok(Element::EndTag(EndTag::from_end_tag_bytes(end_tag_bytes)?))
+            Ok(Element::EndTag(tag))
         }
         Event::Empty(empty_tag_bytes) => Ok(Element::EmptyTag(EmptyTag::from_empty_tag_bytes(
             empty_tag_bytes,
