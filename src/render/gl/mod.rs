@@ -34,6 +34,7 @@ impl From<Color> for GLColor {
 enum RawOperationData {
     DrawPoints(PointVertexData),
     DrawLines(LineVertexData),
+    DrawAdjacentLines(LineVertexData),
     FillPolygon(PolygonFillData),
 }
 
@@ -181,7 +182,6 @@ impl OperationExtractor {
                 color.3,
             ],
             2,
-            true,
         );
     }
 
@@ -191,7 +191,6 @@ impl OperationExtractor {
         thickness: f32,
         new_data: &[f32],
         num_vertices: u32,
-        merge_with_last_if_possible: bool,
     ) {
         let line_data = match self.data.last_mut() {
             Some(RawOperationData::DrawLines(line_data)) => line_data,
@@ -208,14 +207,6 @@ impl OperationExtractor {
         };
 
         line_data.data.extend_from_slice(new_data);
-        if !merge_with_last_if_possible {
-            line_data.sequence.push(DrawLineOp {
-                draw_type,
-                thickness,
-                num_vertices,
-            });
-            return;
-        }
 
         match line_data.sequence.last_mut() {
             Some(last_draw_op)
@@ -234,10 +225,15 @@ impl OperationExtractor {
     }
 
     fn load_polygon(&mut self, polygon: &Polygon, transform: &Transform) {
+        if polygon.points.len() < 3 {
+            return;
+        }
+
         let polygon_transform = transform * &polygon.style.transform;
         let mut fill_vertex_data: Vec<f32> = Vec::new();
         let mut fill_element_data: Vec<GLuint> = Vec::new();
         let mut stroke_vertex_data: Vec<f32> = Vec::new();
+        let num_stroke_vertices = polygon.points.len() + 3; // Add space for adjacency information
         let fill_color: GLColor = polygon.style.fill_color.into();
         let stroke_color: GLColor = polygon.style.stroke_color.into();
         let do_outline = stroke_color.3 > 0.0 && polygon.style.stroke_width > 0.0;
@@ -269,8 +265,20 @@ impl OperationExtractor {
 
         if do_outline {
             stroke_vertex_data.reserve_exact(
-                polygon.points.len() * (shaders::POS_SIZE + shaders::COLOR_SIZE) as usize,
+                num_stroke_vertices * (shaders::POS_SIZE + shaders::COLOR_SIZE) as usize,
             );
+
+            // Push a copy of the last point to the front to give adjacency information for the first edge
+            let last_point = polygon.points.last().unwrap();
+            let transformed_position = Vector3D::from_vector(last_point) * &polygon_transform;
+            stroke_vertex_data.extend_from_slice(&[
+                transformed_position[0],
+                transformed_position[1],
+                stroke_color.0,
+                stroke_color.1,
+                stroke_color.2,
+                stroke_color.3,
+            ]);
         }
 
         for point in polygon.points.iter() {
@@ -308,13 +316,50 @@ impl OperationExtractor {
         }
 
         if do_outline {
-            self.append_line_data(
-                gl::LINE_LOOP,
-                polygon.style.stroke_width,
-                &stroke_vertex_data,
-                polygon.points.len() as u32,
-                false,
-            );
+            // Wrap around to include enough information to close the loop
+            let first_point = &polygon.points[0];
+            let transformed_position = Vector3D::from_vector(first_point) * &polygon_transform;
+            stroke_vertex_data.extend_from_slice(&[
+                transformed_position[0],
+                transformed_position[1],
+                stroke_color.0,
+                stroke_color.1,
+                stroke_color.2,
+                stroke_color.3,
+            ]);
+
+            let second_point = &polygon.points[1];
+            let transformed_position = Vector3D::from_vector(second_point) * &polygon_transform;
+            stroke_vertex_data.extend_from_slice(&[
+                transformed_position[0],
+                transformed_position[1],
+                stroke_color.0,
+                stroke_color.1,
+                stroke_color.2,
+                stroke_color.3,
+            ]);
+
+            match self.data.last_mut() {
+                Some(RawOperationData::DrawAdjacentLines(line_data)) => {
+                    line_data.data.extend(stroke_vertex_data);
+                    line_data.sequence.push(DrawLineOp {
+                        draw_type: gl::LINE_STRIP_ADJACENCY,
+                        thickness: polygon.style.stroke_width,
+                        num_vertices: num_stroke_vertices as u32,
+                    });
+                }
+                _ => {
+                    self.data
+                        .push(RawOperationData::DrawAdjacentLines(LineVertexData {
+                            data: stroke_vertex_data,
+                            sequence: vec![DrawLineOp {
+                                draw_type: gl::LINE_STRIP_ADJACENCY,
+                                thickness: polygon.style.stroke_width,
+                                num_vertices: num_stroke_vertices as u32,
+                            }],
+                        }));
+                }
+            };
         }
     }
 }
@@ -347,11 +392,16 @@ struct LineVertexArray {
     array_index: GLuint,
     buffer_index: GLuint,
     sequence: Vec<DrawLineOp>,
+    is_adjacency: bool,
 }
 
 impl LineVertexArray {
     unsafe fn draw(&self, shaders: &mut ShaderMgr) {
-        shaders.activate(shaders::Shader::Line);
+        shaders.activate(if self.is_adjacency {
+            shaders::Shader::LineAdjacency
+        } else {
+            shaders::Shader::Line
+        });
         gl::BindVertexArray(self.array_index);
         gl::BindBuffer(gl::ARRAY_BUFFER, self.buffer_index);
         let mut total_drawn: u32 = 0;
@@ -411,6 +461,7 @@ impl Drop for TriangleVertexArray {
 enum Operation {
     DrawPoints(PointArray),
     DrawLines(LineVertexArray),
+    DrawAdjacentLines(LineVertexArray),
     FillPolygon(TriangleVertexArray),
 }
 
@@ -457,6 +508,7 @@ impl Operation {
                         array_index: 0,
                         buffer_index: 0,
                         sequence: line_data.sequence,
+                        is_adjacency: false,
                     };
 
                     unsafe {
@@ -479,6 +531,35 @@ impl Operation {
                     }
 
                     operations.push(Operation::DrawLines(line_vertex_array));
+                }
+                RawOperationData::DrawAdjacentLines(line_data) => {
+                    let mut line_vertex_array = LineVertexArray {
+                        array_index: 0,
+                        buffer_index: 0,
+                        sequence: line_data.sequence,
+                        is_adjacency: true,
+                    };
+
+                    unsafe {
+                        shaders.activate(shaders::Shader::LineAdjacency);
+
+                        gl::GenVertexArrays(1, &mut line_vertex_array.array_index);
+                        gl::BindVertexArray(line_vertex_array.array_index);
+
+                        gl::GenBuffers(1, &mut line_vertex_array.buffer_index);
+                        gl::BindBuffer(gl::ARRAY_BUFFER, line_vertex_array.buffer_index);
+                        gl::BufferData(
+                            gl::ARRAY_BUFFER,
+                            (line_data.data.len() * std::mem::size_of::<f32>())
+                                as gl::types::GLsizeiptr,
+                            line_data.data.as_ptr() as *const c_void,
+                            gl::STATIC_DRAW,
+                        );
+
+                        shaders.bind_attributes_to_vertex_array();
+                    }
+
+                    operations.push(Operation::DrawAdjacentLines(line_vertex_array));
                 }
                 RawOperationData::FillPolygon(polygon_data) => {
                     let mut triangle_vertex_array = TriangleVertexArray {
@@ -534,7 +615,8 @@ impl Operation {
                 Operation::DrawPoints(point_array) => {
                     point_array.draw(shaders);
                 }
-                Operation::DrawLines(line_vertex_array) => {
+                Operation::DrawLines(line_vertex_array)
+                | Operation::DrawAdjacentLines(line_vertex_array) => {
                     line_vertex_array.draw(shaders);
                 }
                 Operation::FillPolygon(element_buffer) => {
@@ -698,7 +780,8 @@ impl Renderer for GLRenderer {
     fn render_objects(&mut self) {
         // update uniform controlling the viewer transform (if necessary? Maybe do that only when it updates?)
         unsafe {
-            self.shaders.borrow()
+            self.shaders
+                .borrow()
                 .update_norm_to_viewer(self.viewer.get_norm_to_viewer());
         }
 
@@ -779,11 +862,13 @@ mod tests {
         let screen_center = norm_to_viewer(&viewer, &viewer.center);
 
         let pixel = Vector2D::from([3.0, 4.0]);
-        let position_norm_before_zoom = (norm_to_viewer(&viewer, &pixel) - &screen_center).get_norm();
+        let position_norm_before_zoom =
+            (norm_to_viewer(&viewer, &pixel) - &screen_center).get_norm();
 
         viewer.zoom_by(ZOOM_AMOUNT);
 
-        let position_norm_after_zoom = (norm_to_viewer(&viewer, &pixel) - &screen_center).get_norm();
+        let position_norm_after_zoom =
+            (norm_to_viewer(&viewer, &pixel) - &screen_center).get_norm();
 
         assert_eq!(
             position_norm_before_zoom * ZOOM_AMOUNT,

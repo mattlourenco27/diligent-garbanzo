@@ -9,11 +9,13 @@ pub const COLOR_SIZE: u8 = 4;
 pub enum Shader {
     Basic,
     Line,
+    LineAdjacency,
 }
 
 pub struct ShaderMgr {
     basic_shader: BasicShader,
     line_shader: LineShader,
+    line_adjacency_shader: LineAdjacencyShader,
     active_shader: Shader,
 }
 
@@ -22,6 +24,7 @@ impl ShaderMgr {
         Ok(Self {
             basic_shader: BasicShader::build()?,
             line_shader: LineShader::build()?,
+            line_adjacency_shader: LineAdjacencyShader::build()?,
             active_shader: Shader::Basic,
         })
     }
@@ -30,6 +33,7 @@ impl ShaderMgr {
         match shader {
             Shader::Basic => self.basic_shader.activate(),
             Shader::Line => self.line_shader.activate(),
+            Shader::LineAdjacency => self.line_adjacency_shader.activate(),
         }
         self.active_shader = shader;
     }
@@ -38,6 +42,7 @@ impl ShaderMgr {
         match self.active_shader {
             Shader::Basic => self.basic_shader.bind_attributes_to_vertex_array(),
             Shader::Line => self.line_shader.bind_attributes_to_vertex_array(),
+            Shader::LineAdjacency => self.line_adjacency_shader.bind_attributes_to_vertex_array(),
         }
     }
 
@@ -48,16 +53,21 @@ impl ShaderMgr {
         self.line_shader.activate();
         self.line_shader
             .update_norm_to_viewer(norm_to_viewer_transform);
+        self.line_adjacency_shader.activate();
+        self.line_adjacency_shader
+            .update_norm_to_viewer(norm_to_viewer_transform);
 
         match self.active_shader {
             Shader::Basic => self.basic_shader.activate(),
             Shader::Line => self.line_shader.activate(),
+            Shader::LineAdjacency => self.line_adjacency_shader.activate(),
         }
     }
 
     pub unsafe fn set_line_thickness(&self, thickness: f32) {
         match self.active_shader {
             Shader::Line => self.line_shader.update_line_thickness(thickness),
+            Shader::LineAdjacency => self.line_adjacency_shader.update_line_thickness(thickness),
             _ => panic!("Tried to update line thickness on a shader that does not support it."),
         }
     }
@@ -127,6 +137,12 @@ out vec4 GeoColor;
 uniform float thickness;
 uniform mat3 norm_to_viewer;
 
+void EmitTransformedVertex(in vec2 position) {
+    vec3 transformed = vec3(position, 1.0) * norm_to_viewer;
+    gl_Position = vec4(transformed.x, -transformed.y, 0.0, 1.0);
+    EmitVertex();
+}
+
 void main() {
     vec2 p0 = gl_in[0].gl_Position.xy;
     vec2 p1 = gl_in[1].gl_Position.xy;
@@ -140,24 +156,13 @@ void main() {
     vec2 v2 = p1 + offset;
     vec2 v3 = p1 - offset;
 
-    // Transform to screen space when outputting
     GeoColor = VertexColor[0];
-    vec3 transformed = vec3(v0, 1.0) * norm_to_viewer;
-    gl_Position = vec4(transformed.x, -transformed.y, 0.0, 1.0);
-    EmitVertex();
-    
-    transformed = vec3(v1, 1.0) * norm_to_viewer;
-    gl_Position = vec4(transformed.x, -transformed.y, 0.0, 1.0);
-    EmitVertex();
+    EmitTransformedVertex(v0);
+    EmitTransformedVertex(v1);
     
     GeoColor = VertexColor[1];
-    transformed = vec3(v2, 1.0) * norm_to_viewer;
-    gl_Position = vec4(transformed.x, -transformed.y, 0.0, 1.0);
-    EmitVertex();
-    
-    transformed = vec3(v3, 1.0) * norm_to_viewer;
-    gl_Position = vec4(transformed.x, -transformed.y, 0.0, 1.0);
-    EmitVertex();
+    EmitTransformedVertex(v2);
+    EmitTransformedVertex(v3);
     
     EndPrimitive();
 }";
@@ -273,6 +278,209 @@ impl ShaderProgram for LineShader {
 }
 
 impl Drop for LineShader {
+    fn drop(&mut self) {
+        unsafe {
+            gl::DeleteProgram(self.shader_program);
+            gl::DeleteShader(self.fragment_shader);
+            gl::DeleteShader(self.vertex_shader);
+            gl::DeleteShader(self.geometry_shader);
+        }
+    }
+}
+
+struct LineAdjacencyShader {
+    vertex_shader: GLuint,
+    fragment_shader: GLuint,
+    geometry_shader: GLuint,
+    shader_program: GLuint,
+    position_attr: GLuint,
+    color_attr: GLuint,
+    norm_to_viewer_uniform: GLuint,
+    line_thickness_uniform: GLuint,
+}
+
+impl LineAdjacencyShader {
+    const VERTEX_SHADER: &CStr = c"#version 150 core
+
+in vec2 position;
+in vec4 color;
+
+out vec4 VertexColor;
+
+void main() {
+    VertexColor = color;
+    gl_Position = vec4(position, 0.0, 1.0);
+}";
+
+    const FRAGMENT_SHADER: &CStr = c"#version 150 core
+
+in vec4 GeoColor;
+
+out vec4 outColor;
+
+void main()
+{
+    outColor = GeoColor;
+}";
+
+    const GEOMETRY_SHADER: &CStr = c"#version 150 core
+layout(lines_adjacency) in;
+layout(triangle_strip, max_vertices = 8) out;
+
+in vec4 VertexColor[];
+out vec4 GeoColor;
+
+uniform float thickness;
+uniform mat3 norm_to_viewer;
+
+void EmitTransformedVertex(in vec2 position) {
+    vec3 transformed = vec3(position, 1.0) * norm_to_viewer;
+    gl_Position = vec4(transformed.x, -transformed.y, 0.0, 1.0);
+    EmitVertex();
+}
+
+void main() {
+    vec2 p0 = gl_in[0].gl_Position.xy; // previous point
+    vec2 p1 = gl_in[1].gl_Position.xy; // current start
+    vec2 p2 = gl_in[2].gl_Position.xy; // current end
+    vec2 p3 = gl_in[3].gl_Position.xy; // next point
+
+    vec2 v1 = normalize(p2 - p1); // current segment direction
+    vec2 v2 = normalize(p3 - p2); // next segment direction
+
+    vec2 n1 = vec2(-v1.y, v1.x) * thickness * 0.5;
+
+    // Create basic line segment
+    GeoColor = VertexColor[1];
+    EmitTransformedVertex(p1 + n1);
+    EmitTransformedVertex(p1 - n1);
+
+    GeoColor = VertexColor[2];
+    EmitTransformedVertex(p2 + n1);
+    EmitTransformedVertex(p2 - n1);
+
+    // Handle join at p2
+    if (p2 != p3) {
+        vec2 n2 = vec2(-v2.y, v2.x) * thickness * 0.5;
+        
+        EmitTransformedVertex(p2 + n2);
+        EmitTransformedVertex(p2 - n2);
+    }
+    
+    EndPrimitive();
+}";
+}
+
+impl LineAdjacencyShader {
+    unsafe fn bind_fragment_shader_output(&self) -> Result<(), String> {
+        gl::BindFragDataLocation(self.shader_program, 0, c"outColor".as_ptr());
+
+        maybe_get_gl_error()?;
+
+        Ok(())
+    }
+
+    unsafe fn record_attribute_locations(&mut self) -> Result<(), String> {
+        let position_attribute = gl::GetAttribLocation(self.shader_program, c"position".as_ptr());
+        maybe_get_gl_error()?;
+        self.position_attr = position_attribute as GLuint;
+
+        let color_attribute = gl::GetAttribLocation(self.shader_program, c"color".as_ptr());
+        maybe_get_gl_error()?;
+        self.color_attr = color_attribute as GLuint;
+
+        let norm_to_viewer_uniform =
+            gl::GetUniformLocation(self.shader_program, c"norm_to_viewer".as_ptr());
+        maybe_get_gl_error()?;
+        self.norm_to_viewer_uniform = norm_to_viewer_uniform as GLuint;
+
+        let thickness_uniform = gl::GetUniformLocation(self.shader_program, c"thickness".as_ptr());
+        maybe_get_gl_error()?;
+        self.line_thickness_uniform = thickness_uniform as GLuint;
+
+        Ok(())
+    }
+
+    fn update_line_thickness(&self, thickness: f32) {
+        unsafe {
+            gl::Uniform1f(self.line_thickness_uniform as GLint, thickness);
+        }
+    }
+}
+
+impl ShaderProgram for LineAdjacencyShader {
+    fn build() -> Result<LineAdjacencyShader, String> {
+        unsafe {
+            let shader_program = create_program()?;
+            let vertex_shader = send_compile_and_attach_shader(
+                gl::VERTEX_SHADER,
+                LineAdjacencyShader::VERTEX_SHADER,
+                shader_program,
+            )?;
+            let fragment_shader = send_compile_and_attach_shader(
+                gl::FRAGMENT_SHADER,
+                LineAdjacencyShader::FRAGMENT_SHADER,
+                shader_program,
+            )?;
+            let geometry_shader = send_compile_and_attach_shader(
+                gl::GEOMETRY_SHADER,
+                LineAdjacencyShader::GEOMETRY_SHADER,
+                shader_program,
+            )?;
+
+            link_program(shader_program)?;
+
+            let mut shader = LineAdjacencyShader {
+                vertex_shader,
+                fragment_shader,
+                geometry_shader,
+                shader_program,
+                position_attr: 0,
+                color_attr: 0,
+                norm_to_viewer_uniform: 0,
+                line_thickness_uniform: 0,
+            };
+
+            shader.record_attribute_locations()?;
+            shader.bind_fragment_shader_output()?;
+
+            Ok(shader)
+        }
+    }
+
+    unsafe fn bind_attributes_to_vertex_array(&self) {
+        gl::VertexAttribPointer(
+            self.position_attr as gl::types::GLuint,
+            POS_SIZE as GLint,
+            gl::FLOAT,
+            gl::FALSE,
+            ((POS_SIZE + COLOR_SIZE) as usize * std::mem::size_of::<f32>()) as gl::types::GLsizei,
+            std::ptr::null(),
+        );
+
+        gl::VertexAttribPointer(
+            self.color_attr as gl::types::GLuint,
+            COLOR_SIZE as GLint,
+            gl::FLOAT,
+            gl::FALSE,
+            ((POS_SIZE + COLOR_SIZE) as usize * std::mem::size_of::<f32>()) as gl::types::GLsizei,
+            (POS_SIZE as usize * std::mem::size_of::<f32>()) as *const c_void,
+        );
+
+        gl::EnableVertexAttribArray(self.position_attr as gl::types::GLuint);
+        gl::EnableVertexAttribArray(self.color_attr as gl::types::GLuint);
+    }
+
+    unsafe fn activate(&self) {
+        gl::UseProgram(self.shader_program);
+    }
+
+    fn get_norm_to_viewer_uniform(&self) -> GLint {
+        self.norm_to_viewer_uniform as GLint
+    }
+}
+
+impl Drop for LineAdjacencyShader {
     fn drop(&mut self) {
         unsafe {
             gl::DeleteProgram(self.shader_program);
