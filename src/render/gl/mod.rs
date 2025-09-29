@@ -12,7 +12,7 @@ use crate::{
     matrix::Matrix3x3,
     objects::{svg::*, Object, ObjectMgr},
     render::{gl::shaders::ShaderMgr, Renderer, Viewer},
-    vector::{Vector2D, Vector3D},
+    vector::Vector2D,
 };
 
 mod shaders;
@@ -777,7 +777,7 @@ impl Renderer for GLRenderer {
         // update uniform controlling the viewer transform (if necessary? Maybe do that only when it updates?)
         unsafe {
             self.shaders
-                .borrow()
+                .borrow_mut()
                 .update_norm_to_viewer(self.viewer.get_norm_to_viewer());
         }
 

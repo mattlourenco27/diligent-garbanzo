@@ -40,22 +40,28 @@ impl ShaderMgr {
 
     pub unsafe fn bind_attributes_to_vertex_array(&self) {
         match self.active_shader {
-            Shader::Basic => self.basic_shader.bind_attributes_to_vertex_array(),
-            Shader::Line => self.line_shader.bind_attributes_to_vertex_array(),
-            Shader::LineAdjacency => self.line_adjacency_shader.bind_attributes_to_vertex_array(),
+            Shader::Basic => self.basic_shader.attributes.bind(),
+            Shader::Line => self.line_shader.attributes.bind(),
+            Shader::LineAdjacency => self.line_adjacency_shader.attributes.bind(),
         }
     }
 
-    pub unsafe fn update_norm_to_viewer(&self, norm_to_viewer_transform: &Matrix3x3<f32>) {
+    pub unsafe fn update_norm_to_viewer(&mut self, norm_to_viewer_transform: &Matrix3x3<f32>) {
         self.basic_shader.activate();
         self.basic_shader
-            .update_norm_to_viewer(norm_to_viewer_transform);
+            .attributes
+            .norm_to_viewer
+            .update(norm_to_viewer_transform.clone());
         self.line_shader.activate();
         self.line_shader
-            .update_norm_to_viewer(norm_to_viewer_transform);
+            .attributes
+            .norm_to_viewer
+            .update(norm_to_viewer_transform.clone());
         self.line_adjacency_shader.activate();
         self.line_adjacency_shader
-            .update_norm_to_viewer(norm_to_viewer_transform);
+            .attributes
+            .norm_to_viewer
+            .update(norm_to_viewer_transform.clone());
 
         match self.active_shader {
             Shader::Basic => self.basic_shader.activate(),
@@ -64,10 +70,14 @@ impl ShaderMgr {
         }
     }
 
-    pub unsafe fn set_line_thickness(&self, thickness: f32) {
+    pub unsafe fn set_line_thickness(&mut self, thickness: f32) {
         match self.active_shader {
-            Shader::Line => self.line_shader.update_line_thickness(thickness),
-            Shader::LineAdjacency => self.line_adjacency_shader.update_line_thickness(thickness),
+            Shader::Line => self.line_shader.attributes.thickness.update(thickness),
+            Shader::LineAdjacency => self
+                .line_adjacency_shader
+                .attributes
+                .thickness
+                .update(thickness),
             _ => panic!("Tried to update line thickness on a shader that does not support it."),
         }
     }
@@ -78,17 +88,161 @@ trait ShaderProgram {
     where
         Self: Sized;
 
-    unsafe fn bind_attributes_to_vertex_array(&self);
     unsafe fn activate(&self);
+}
 
-    fn get_norm_to_viewer_uniform(&self) -> GLint;
-    unsafe fn update_norm_to_viewer(&self, norm_to_viewer_transform: &Matrix3x3<f32>) {
-        gl::UniformMatrix3fv(
-            self.get_norm_to_viewer_uniform(),
-            1,
-            gl::TRUE,
-            <&Matrix3x3<f32> as Into<&[[f32; 3]; 3]>>::into(norm_to_viewer_transform)[0].as_ptr(),
+struct Uniform<T>
+where
+    T: PartialEq,
+{
+    uniform_index: GLint,
+    current_value: Option<T>,
+}
+
+impl Uniform<f32> {
+    fn update(&mut self, new_value: f32) {
+        match &self.current_value {
+            Some(value) if *value == new_value => return,
+            _ => {}
+        }
+
+        unsafe {
+            gl::Uniform1f(self.uniform_index, new_value);
+        }
+
+        self.current_value = Some(new_value);
+    }
+}
+
+impl Uniform<Matrix3x3<f32>> {
+    fn update(&mut self, new_value: Matrix3x3<f32>) {
+        match &self.current_value {
+            Some(value) if *value == new_value => return,
+            _ => {}
+        }
+
+        unsafe {
+            gl::UniformMatrix3fv(
+                self.uniform_index,
+                1,
+                gl::TRUE,
+                <&Matrix3x3<f32> as Into<&[[f32; 3]; 3]>>::into(&new_value)[0].as_ptr(),
+            );
+        }
+
+        self.current_value = Some(new_value);
+    }
+}
+
+trait Attributes {
+    fn get_position_index(&self) -> GLuint;
+    fn get_color_index(&self) -> GLuint;
+
+    unsafe fn bind(&self) {
+        gl::VertexAttribPointer(
+            self.get_position_index() as gl::types::GLuint,
+            POS_SIZE as GLint,
+            gl::FLOAT,
+            gl::FALSE,
+            ((POS_SIZE + COLOR_SIZE) as usize * std::mem::size_of::<f32>()) as gl::types::GLsizei,
+            std::ptr::null(),
         );
+
+        gl::VertexAttribPointer(
+            self.get_color_index() as gl::types::GLuint,
+            COLOR_SIZE as GLint,
+            gl::FLOAT,
+            gl::FALSE,
+            ((POS_SIZE + COLOR_SIZE) as usize * std::mem::size_of::<f32>()) as gl::types::GLsizei,
+            (POS_SIZE as usize * std::mem::size_of::<f32>()) as *const c_void,
+        );
+
+        gl::EnableVertexAttribArray(self.get_position_index() as gl::types::GLuint);
+        gl::EnableVertexAttribArray(self.get_color_index() as gl::types::GLuint);
+    }
+}
+
+struct BasicAttributes {
+    position: GLuint,
+    color: GLuint,
+    norm_to_viewer: Uniform<Matrix3x3<f32>>,
+}
+
+impl Attributes for BasicAttributes {
+    fn get_position_index(&self) -> GLuint {
+        self.position
+    }
+
+    fn get_color_index(&self) -> GLuint {
+        self.color
+    }
+}
+
+impl BasicAttributes {
+    unsafe fn new(shader_program: GLuint) -> Result<Self, String> {
+        let position = gl::GetAttribLocation(shader_program, c"position".as_ptr());
+        maybe_get_gl_error()?;
+
+        let color = gl::GetAttribLocation(shader_program, c"color".as_ptr());
+        maybe_get_gl_error()?;
+
+        let norm_to_viewer = gl::GetUniformLocation(shader_program, c"norm_to_viewer".as_ptr());
+        maybe_get_gl_error()?;
+
+        Ok(BasicAttributes {
+            position: position as GLuint,
+            color: color as GLuint,
+            norm_to_viewer: Uniform::<Matrix3x3<f32>> {
+                uniform_index: norm_to_viewer,
+                current_value: None,
+            },
+        })
+    }
+}
+
+struct LineAttributes {
+    position: GLuint,
+    color: GLuint,
+    norm_to_viewer: Uniform<Matrix3x3<f32>>,
+    thickness: Uniform<f32>,
+}
+
+impl Attributes for LineAttributes {
+    fn get_position_index(&self) -> GLuint {
+        self.position
+    }
+
+    fn get_color_index(&self) -> GLuint {
+        self.color
+    }
+}
+
+impl LineAttributes {
+    unsafe fn new(shader_program: GLuint) -> Result<Self, String> {
+        let position = gl::GetAttribLocation(shader_program, c"position".as_ptr());
+        maybe_get_gl_error()?;
+
+        let color = gl::GetAttribLocation(shader_program, c"color".as_ptr());
+        maybe_get_gl_error()?;
+
+        let norm_to_viewer = gl::GetUniformLocation(shader_program, c"norm_to_viewer".as_ptr());
+        maybe_get_gl_error()?;
+
+        let thickness = gl::GetUniformLocation(shader_program, c"thickness".as_ptr());
+        maybe_get_gl_error()?;
+
+        Ok(LineAttributes {
+            position: position as GLuint,
+            color: color as GLuint,
+            norm_to_viewer: Uniform::<Matrix3x3<f32>> {
+                uniform_index: norm_to_viewer,
+                current_value: None,
+            },
+            thickness: Uniform::<f32> {
+                uniform_index: thickness,
+                current_value: None,
+            },
+        })
     }
 }
 
@@ -97,10 +251,7 @@ struct LineShader {
     fragment_shader: GLuint,
     geometry_shader: GLuint,
     shader_program: GLuint,
-    position_attr: GLuint,
-    color_attr: GLuint,
-    norm_to_viewer_uniform: GLuint,
-    line_thickness_uniform: GLuint,
+    attributes: LineAttributes,
 }
 
 impl LineShader {
@@ -176,33 +327,6 @@ impl LineShader {
 
         Ok(())
     }
-
-    unsafe fn record_attribute_locations(&mut self) -> Result<(), String> {
-        let position_attribute = gl::GetAttribLocation(self.shader_program, c"position".as_ptr());
-        maybe_get_gl_error()?;
-        self.position_attr = position_attribute as GLuint;
-
-        let color_attribute = gl::GetAttribLocation(self.shader_program, c"color".as_ptr());
-        maybe_get_gl_error()?;
-        self.color_attr = color_attribute as GLuint;
-
-        let norm_to_viewer_uniform =
-            gl::GetUniformLocation(self.shader_program, c"norm_to_viewer".as_ptr());
-        maybe_get_gl_error()?;
-        self.norm_to_viewer_uniform = norm_to_viewer_uniform as GLuint;
-
-        let thickness_uniform = gl::GetUniformLocation(self.shader_program, c"thickness".as_ptr());
-        maybe_get_gl_error()?;
-        self.line_thickness_uniform = thickness_uniform as GLuint;
-
-        Ok(())
-    }
-
-    fn update_line_thickness(&self, thickness: f32) {
-        unsafe {
-            gl::Uniform1f(self.line_thickness_uniform as GLint, thickness);
-        }
-    }
 }
 
 impl ShaderProgram for LineShader {
@@ -227,53 +351,22 @@ impl ShaderProgram for LineShader {
 
             link_program(shader_program)?;
 
-            let mut shader = LineShader {
+            let shader = LineShader {
                 vertex_shader,
                 fragment_shader,
                 geometry_shader,
                 shader_program,
-                position_attr: 0,
-                color_attr: 0,
-                norm_to_viewer_uniform: 0,
-                line_thickness_uniform: 0,
+                attributes: LineAttributes::new(shader_program)?,
             };
 
-            shader.record_attribute_locations()?;
             shader.bind_fragment_shader_output()?;
 
             Ok(shader)
         }
     }
 
-    unsafe fn bind_attributes_to_vertex_array(&self) {
-        gl::VertexAttribPointer(
-            self.position_attr as gl::types::GLuint,
-            POS_SIZE as GLint,
-            gl::FLOAT,
-            gl::FALSE,
-            ((POS_SIZE + COLOR_SIZE) as usize * std::mem::size_of::<f32>()) as gl::types::GLsizei,
-            std::ptr::null(),
-        );
-
-        gl::VertexAttribPointer(
-            self.color_attr as gl::types::GLuint,
-            COLOR_SIZE as GLint,
-            gl::FLOAT,
-            gl::FALSE,
-            ((POS_SIZE + COLOR_SIZE) as usize * std::mem::size_of::<f32>()) as gl::types::GLsizei,
-            (POS_SIZE as usize * std::mem::size_of::<f32>()) as *const c_void,
-        );
-
-        gl::EnableVertexAttribArray(self.position_attr as gl::types::GLuint);
-        gl::EnableVertexAttribArray(self.color_attr as gl::types::GLuint);
-    }
-
     unsafe fn activate(&self) {
         gl::UseProgram(self.shader_program);
-    }
-
-    fn get_norm_to_viewer_uniform(&self) -> GLint {
-        self.norm_to_viewer_uniform as GLint
     }
 }
 
@@ -293,10 +386,7 @@ struct LineAdjacencyShader {
     fragment_shader: GLuint,
     geometry_shader: GLuint,
     shader_program: GLuint,
-    position_attr: GLuint,
-    color_attr: GLuint,
-    norm_to_viewer_uniform: GLuint,
-    line_thickness_uniform: GLuint,
+    attributes: LineAttributes,
 }
 
 impl LineAdjacencyShader {
@@ -379,33 +469,6 @@ impl LineAdjacencyShader {
 
         Ok(())
     }
-
-    unsafe fn record_attribute_locations(&mut self) -> Result<(), String> {
-        let position_attribute = gl::GetAttribLocation(self.shader_program, c"position".as_ptr());
-        maybe_get_gl_error()?;
-        self.position_attr = position_attribute as GLuint;
-
-        let color_attribute = gl::GetAttribLocation(self.shader_program, c"color".as_ptr());
-        maybe_get_gl_error()?;
-        self.color_attr = color_attribute as GLuint;
-
-        let norm_to_viewer_uniform =
-            gl::GetUniformLocation(self.shader_program, c"norm_to_viewer".as_ptr());
-        maybe_get_gl_error()?;
-        self.norm_to_viewer_uniform = norm_to_viewer_uniform as GLuint;
-
-        let thickness_uniform = gl::GetUniformLocation(self.shader_program, c"thickness".as_ptr());
-        maybe_get_gl_error()?;
-        self.line_thickness_uniform = thickness_uniform as GLuint;
-
-        Ok(())
-    }
-
-    fn update_line_thickness(&self, thickness: f32) {
-        unsafe {
-            gl::Uniform1f(self.line_thickness_uniform as GLint, thickness);
-        }
-    }
 }
 
 impl ShaderProgram for LineAdjacencyShader {
@@ -430,53 +493,22 @@ impl ShaderProgram for LineAdjacencyShader {
 
             link_program(shader_program)?;
 
-            let mut shader = LineAdjacencyShader {
+            let shader = LineAdjacencyShader {
                 vertex_shader,
                 fragment_shader,
                 geometry_shader,
                 shader_program,
-                position_attr: 0,
-                color_attr: 0,
-                norm_to_viewer_uniform: 0,
-                line_thickness_uniform: 0,
+                attributes: LineAttributes::new(shader_program)?,
             };
 
-            shader.record_attribute_locations()?;
             shader.bind_fragment_shader_output()?;
 
             Ok(shader)
         }
     }
 
-    unsafe fn bind_attributes_to_vertex_array(&self) {
-        gl::VertexAttribPointer(
-            self.position_attr as gl::types::GLuint,
-            POS_SIZE as GLint,
-            gl::FLOAT,
-            gl::FALSE,
-            ((POS_SIZE + COLOR_SIZE) as usize * std::mem::size_of::<f32>()) as gl::types::GLsizei,
-            std::ptr::null(),
-        );
-
-        gl::VertexAttribPointer(
-            self.color_attr as gl::types::GLuint,
-            COLOR_SIZE as GLint,
-            gl::FLOAT,
-            gl::FALSE,
-            ((POS_SIZE + COLOR_SIZE) as usize * std::mem::size_of::<f32>()) as gl::types::GLsizei,
-            (POS_SIZE as usize * std::mem::size_of::<f32>()) as *const c_void,
-        );
-
-        gl::EnableVertexAttribArray(self.position_attr as gl::types::GLuint);
-        gl::EnableVertexAttribArray(self.color_attr as gl::types::GLuint);
-    }
-
     unsafe fn activate(&self) {
         gl::UseProgram(self.shader_program);
-    }
-
-    fn get_norm_to_viewer_uniform(&self) -> GLint {
-        self.norm_to_viewer_uniform as GLint
     }
 }
 
@@ -495,9 +527,7 @@ struct BasicShader {
     vertex_shader: GLuint,
     fragment_shader: GLuint,
     shader_program: GLuint,
-    position_attr: GLuint,
-    color_attr: GLuint,
-    norm_to_viewer_uniform: GLuint,
+    attributes: BasicAttributes,
 }
 
 impl BasicShader {
@@ -536,23 +566,6 @@ impl BasicShader {
 
         Ok(())
     }
-
-    unsafe fn record_attribute_locations(&mut self) -> Result<(), String> {
-        let position_attribute = gl::GetAttribLocation(self.shader_program, c"position".as_ptr());
-        maybe_get_gl_error()?;
-        self.position_attr = position_attribute as GLuint;
-
-        let color_attribute = gl::GetAttribLocation(self.shader_program, c"color".as_ptr());
-        maybe_get_gl_error()?;
-        self.color_attr = color_attribute as GLuint;
-
-        let norm_to_viewer_uniform =
-            gl::GetUniformLocation(self.shader_program, c"norm_to_viewer".as_ptr());
-        maybe_get_gl_error()?;
-        self.norm_to_viewer_uniform = norm_to_viewer_uniform as GLuint;
-
-        Ok(())
-    }
 }
 
 impl ShaderProgram for BasicShader {
@@ -572,51 +585,21 @@ impl ShaderProgram for BasicShader {
 
             link_program(shader_program)?;
 
-            let mut shader = BasicShader {
+            let shader = BasicShader {
                 vertex_shader,
                 fragment_shader,
                 shader_program,
-                position_attr: 0,
-                color_attr: 0,
-                norm_to_viewer_uniform: 0,
+                attributes: BasicAttributes::new(shader_program)?,
             };
 
-            shader.record_attribute_locations()?;
             shader.bind_fragment_shader_output()?;
 
             Ok(shader)
         }
     }
 
-    unsafe fn bind_attributes_to_vertex_array(&self) {
-        gl::VertexAttribPointer(
-            self.position_attr as gl::types::GLuint,
-            POS_SIZE as GLint,
-            gl::FLOAT,
-            gl::FALSE,
-            ((POS_SIZE + COLOR_SIZE) as usize * std::mem::size_of::<f32>()) as gl::types::GLsizei,
-            std::ptr::null(),
-        );
-
-        gl::VertexAttribPointer(
-            self.color_attr as gl::types::GLuint,
-            COLOR_SIZE as GLint,
-            gl::FLOAT,
-            gl::FALSE,
-            ((POS_SIZE + COLOR_SIZE) as usize * std::mem::size_of::<f32>()) as gl::types::GLsizei,
-            (POS_SIZE as usize * std::mem::size_of::<f32>()) as *const c_void,
-        );
-
-        gl::EnableVertexAttribArray(self.position_attr as gl::types::GLuint);
-        gl::EnableVertexAttribArray(self.color_attr as gl::types::GLuint);
-    }
-
     unsafe fn activate(&self) {
         gl::UseProgram(self.shader_program);
-    }
-
-    fn get_norm_to_viewer_uniform(&self) -> GLint {
-        self.norm_to_viewer_uniform as GLint
     }
 }
 
