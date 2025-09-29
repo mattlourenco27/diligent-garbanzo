@@ -611,11 +611,6 @@ impl GLViewer {
         }
     }
 
-    fn norm_to_viewer(&self, position: &Vector2D<f32>) -> Vector2D<f32> {
-        let transformed = Vector3D::from_vector(position) * &self.norm_to_self_transform;
-        Vector2D::from_vector(&transformed)
-    }
-
     fn get_norm_to_viewer(&self) -> &Matrix3x3<f32> {
         &self.norm_to_self_transform
     }
@@ -731,6 +726,11 @@ mod tests {
         GLViewer::new(Vector2D::from([100, 100]))
     }
 
+    fn norm_to_viewer(viewer: &GLViewer, position: &Vector2D<f32>) -> Vector2D<f32> {
+        let transformed = Vector3D::from_vector(position) * viewer.get_norm_to_viewer();
+        Vector2D::from_vector(&transformed)
+    }
+
     #[test]
     fn init_at_origin() {
         let viewer = new_viewer();
@@ -741,7 +741,7 @@ mod tests {
     fn pixels_at_viewer_center_map_to_the_screen_center() {
         let viewer = new_viewer();
         assert_eq!(
-            viewer.norm_to_viewer(&viewer.center),
+            norm_to_viewer(&viewer, &viewer.center),
             Vector2D::from([0.0, 0.0])
         );
     }
@@ -749,9 +749,9 @@ mod tests {
     #[test]
     fn pixels_at_screen_center_are_unaffected_by_zoom() {
         let mut viewer = new_viewer();
-        let pixel_mapping_before_zoom = viewer.norm_to_viewer(&viewer.center);
+        let pixel_mapping_before_zoom = norm_to_viewer(&viewer, &viewer.center);
         viewer.zoom_by(2.0);
-        let pixel_mapping_after_zoom = viewer.norm_to_viewer(&viewer.center);
+        let pixel_mapping_after_zoom = norm_to_viewer(&viewer, &viewer.center);
         assert_eq!(pixel_mapping_before_zoom, pixel_mapping_after_zoom);
     }
 
@@ -760,13 +760,13 @@ mod tests {
         const ZOOM_AMOUNT: f32 = 1.0;
 
         let mut viewer = new_viewer();
-        let screen_center = viewer.norm_to_viewer(&viewer.center);
+        let screen_center = norm_to_viewer(&viewer, &viewer.center);
         viewer.zoom_to(ZOOM_AMOUNT);
 
         let pixel = Vector2D::from([3.0, 4.0]);
         let position_norm_before_mapping = pixel.get_norm();
         let position_norm_after_mapping =
-            (viewer.norm_to_viewer(&pixel) - screen_center).get_norm();
+            (norm_to_viewer(&viewer, &pixel) - screen_center).get_norm();
 
         assert_eq!(position_norm_before_mapping, position_norm_after_mapping);
     }
@@ -776,14 +776,14 @@ mod tests {
         const ZOOM_AMOUNT: f32 = 3.77;
 
         let mut viewer = new_viewer();
-        let screen_center = viewer.norm_to_viewer(&viewer.center);
+        let screen_center = norm_to_viewer(&viewer, &viewer.center);
 
         let pixel = Vector2D::from([3.0, 4.0]);
-        let position_norm_before_zoom = (viewer.norm_to_viewer(&pixel) - &screen_center).get_norm();
+        let position_norm_before_zoom = (norm_to_viewer(&viewer, &pixel) - &screen_center).get_norm();
 
         viewer.zoom_by(ZOOM_AMOUNT);
 
-        let position_norm_after_zoom = (viewer.norm_to_viewer(&pixel) - &screen_center).get_norm();
+        let position_norm_after_zoom = (norm_to_viewer(&viewer, &pixel) - &screen_center).get_norm();
 
         assert_eq!(
             position_norm_before_zoom * ZOOM_AMOUNT,
