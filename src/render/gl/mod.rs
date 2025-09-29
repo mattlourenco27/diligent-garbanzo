@@ -67,53 +67,51 @@ impl OperationExtractor {
         let mut extractor = Self { data: Vec::new() };
 
         for element in svg_object.elements.iter() {
-            extractor.load_element_vertices(&element, &Matrix3x3::IDENTITY3X3);
+            extractor.load_element_vertices(&element);
         }
 
         extractor
     }
 
-    fn load_svg_vertices(&mut self, svg_object: &SVG, transform: &Transform) {
+    fn load_svg_vertices(&mut self, svg_object: &SVG) {
         for element in svg_object.elements.iter() {
-            self.load_element_vertices(&element, transform);
+            self.load_element_vertices(&element);
         }
     }
 
-    fn load_element_vertices(&mut self, element: &Element, transform: &Transform) {
+    fn load_element_vertices(&mut self, element: &Element) {
         match element {
-            Element::StartTag(start_tag) => self.load_tag_group_vertices(start_tag, transform),
-            Element::EmptyTag(empty_tag) => self.load_empty_tag_vertices(empty_tag, transform),
+            Element::StartTag(start_tag) => self.load_tag_group_vertices(start_tag),
+            Element::EmptyTag(empty_tag) => self.load_empty_tag_vertices(empty_tag),
             Element::EndTag(_) => (),
         }
     }
 
-    fn load_tag_group_vertices(&mut self, tag_group: &StartTag, transform: &Transform) {
+    fn load_tag_group_vertices(&mut self, tag_group: &StartTag) {
         match tag_group {
             StartTag::Group(group) => {
-                let new_transform = transform * &group.style.transform;
                 for element in group.elements.iter() {
-                    self.load_element_vertices(element, &new_transform);
+                    self.load_element_vertices(element);
                 }
             }
-            StartTag::SVG(svg_object) => self.load_svg_vertices(svg_object, transform),
+            StartTag::SVG(svg_object) => self.load_svg_vertices(svg_object),
         }
     }
 
-    fn load_empty_tag_vertices(&mut self, empty_tag: &EmptyTag, transform: &Transform) {
+    fn load_empty_tag_vertices(&mut self, empty_tag: &EmptyTag) {
         match empty_tag {
             EmptyTag::Ellipse(_ellipse) => unimplemented!(),
             EmptyTag::Image(_image) => unimplemented!(),
-            EmptyTag::Line(line) => self.load_line(line, transform),
-            EmptyTag::Point(point) => self.load_point(point, transform),
-            EmptyTag::Polygon(polygon) => self.load_polygon(polygon, transform),
+            EmptyTag::Line(line) => self.load_line(line),
+            EmptyTag::Point(point) => self.load_point(point),
+            EmptyTag::Polygon(polygon) => self.load_polygon(polygon),
             EmptyTag::Polyline(_polyline) => unimplemented!(),
             EmptyTag::Rect(_rect) => unimplemented!(),
         }
     }
 
-    fn load_point(&mut self, point: &Point, transform: &Transform) {
-        let new_transform = transform * &point.style.transform;
-        let transformed_position = Vector3D::from_vector(&point.position) * new_transform;
+    fn load_point(&mut self, point: &Point) {
+        let transformed_position = point.style.apply_transform(&point.position);
 
         let color: GLColor = if point.style.fill_color == Style::DEFAULT.fill_color {
             point.style.stroke_color
@@ -148,10 +146,9 @@ impl OperationExtractor {
         };
     }
 
-    fn load_line(&mut self, line: &Line, transform: &Transform) {
-        let new_transform = transform * &line.style.transform;
-        let transformed_p1 = Vector3D::from_vector(&line.from) * &new_transform;
-        let transformed_p2 = Vector3D::from_vector(&line.to) * new_transform;
+    fn load_line(&mut self, line: &Line) {
+        let transformed_p1 = line.style.apply_transform(&line.from);
+        let transformed_p2 = line.style.apply_transform(&line.to);
 
         let color: GLColor = if line.style.fill_color == Style::DEFAULT.fill_color {
             line.style.stroke_color
@@ -224,12 +221,11 @@ impl OperationExtractor {
         }
     }
 
-    fn load_polygon(&mut self, polygon: &Polygon, transform: &Transform) {
+    fn load_polygon(&mut self, polygon: &Polygon) {
         if polygon.points.len() < 3 {
             return;
         }
 
-        let polygon_transform = transform * &polygon.style.transform;
         let mut fill_vertex_data: Vec<f32> = Vec::new();
         let mut fill_element_data: Vec<GLuint> = Vec::new();
         let mut stroke_vertex_data: Vec<f32> = Vec::new();
@@ -270,7 +266,7 @@ impl OperationExtractor {
 
             // Push a copy of the last point to the front to give adjacency information for the first edge
             let last_point = polygon.points.last().unwrap();
-            let transformed_position = Vector3D::from_vector(last_point) * &polygon_transform;
+            let transformed_position = polygon.style.apply_transform(last_point);
             stroke_vertex_data.extend_from_slice(&[
                 transformed_position[0],
                 transformed_position[1],
@@ -282,7 +278,7 @@ impl OperationExtractor {
         }
 
         for point in polygon.points.iter() {
-            let transformed_position = Vector3D::from_vector(point) * &polygon_transform;
+            let transformed_position = polygon.style.apply_transform(point);
 
             if do_fill {
                 fill_vertex_data.extend_from_slice(&[
@@ -318,7 +314,7 @@ impl OperationExtractor {
         if do_outline {
             // Wrap around to include enough information to close the loop
             let first_point = &polygon.points[0];
-            let transformed_position = Vector3D::from_vector(first_point) * &polygon_transform;
+            let transformed_position = polygon.style.apply_transform(first_point);
             stroke_vertex_data.extend_from_slice(&[
                 transformed_position[0],
                 transformed_position[1],
@@ -329,7 +325,7 @@ impl OperationExtractor {
             ]);
 
             let second_point = &polygon.points[1];
-            let transformed_position = Vector3D::from_vector(second_point) * &polygon_transform;
+            let transformed_position = polygon.style.apply_transform(second_point);
             stroke_vertex_data.extend_from_slice(&[
                 transformed_position[0],
                 transformed_position[1],
