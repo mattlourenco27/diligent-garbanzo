@@ -21,6 +21,11 @@ pub struct ShaderMgr {
 
 impl ShaderMgr {
     pub fn new() -> Result<Self, String> {
+        unsafe {
+            gl::Enable(gl::BLEND);
+            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+        }
+
         Ok(Self {
             basic_shader: BasicShader::build()?,
             line_shader: LineShader::build()?,
