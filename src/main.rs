@@ -51,14 +51,20 @@ fn parse_args() -> Option<Args> {
 
 fn update_viewer_from_keyboard(
     viewer: &mut dyn Viewer,
-    us_of_frame: f32,
     keyboard_state: &KeyboardState,
+    us_of_frame: f32,
+    object_mgr: &ObjectMgr,
 ) {
     if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::I) {
         viewer.zoom_by(ZOOM_IN_SPEED.pow(us_of_frame));
     }
     if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::O) {
         viewer.zoom_by(ZOOM_OUT_SPEED.pow(us_of_frame));
+    }
+    if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::R) {
+        if let Some(object) = object_mgr.get_objects().first() {
+            viewer.center_on_object(object);
+        }
     }
     if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Left) {
         viewer.move_by_world_coords(-CAMERA_MOVE_SPEED * us_of_frame, 0.0);
@@ -167,8 +173,9 @@ fn main() {
 
         update_viewer_from_keyboard(
             renderer.get_viewer(),
-            us_of_frame as f32,
             &sdl_context.event_pump.keyboard_state(),
+            us_of_frame as f32,
+            &object_mgr,
         );
 
         let mouse_state = sdl_context.event_pump.mouse_state();
