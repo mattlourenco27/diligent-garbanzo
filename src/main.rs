@@ -1,7 +1,11 @@
 use std::{env, ffi::OsString, path::PathBuf, time::Instant};
 
 use num_traits::Pow;
-use sdl2::{event::Event, keyboard::KeyboardState, mouse::MouseState};
+use sdl2::{
+    event::Event,
+    keyboard::KeyboardState,
+    mouse::{MouseState, MouseWheelDirection},
+};
 
 use drawsvg::{
     objects::{svg, ObjectMgr},
@@ -24,8 +28,10 @@ const CAMERA_MOVE_SPEED: f32 = 0.000001;
 // A value of 2.0 would double the zoom every microsecond exponentially.
 // A value of 1.000001 works out to zooming by about 2.72x per second.
 // (Don't you love it when things just work out to approximating 'e'?)
-const ZOOM_IN_SPEED: f32 = 1.000001;
-const ZOOM_OUT_SPEED: f32 = 1.0 / ZOOM_IN_SPEED;
+const KEYBOARD_ZOOM_IN_SPEED: f32 = 1.000001;
+const KEYBOARD_ZOOM_OUT_SPEED: f32 = 1.0 / KEYBOARD_ZOOM_IN_SPEED;
+const MOUSE_ZOOM_IN_SPEED: f32 = 1.1;
+const MOUSE_ZOOM_OUT_SPEED: f32 = 1.0 / MOUSE_ZOOM_IN_SPEED;
 
 const WINDOW_TITLE: &str = "My Window";
 
@@ -56,10 +62,10 @@ fn update_viewer_from_keyboard(
     object_mgr: &ObjectMgr,
 ) {
     if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::I) {
-        viewer.zoom_by(ZOOM_IN_SPEED.pow(us_of_frame));
+        viewer.zoom_by(KEYBOARD_ZOOM_IN_SPEED.pow(us_of_frame));
     }
     if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::O) {
-        viewer.zoom_by(ZOOM_OUT_SPEED.pow(us_of_frame));
+        viewer.zoom_by(KEYBOARD_ZOOM_OUT_SPEED.pow(us_of_frame));
     }
     if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::R) {
         if let Some(object) = object_mgr.get_objects().first() {
@@ -80,7 +86,19 @@ fn update_viewer_from_keyboard(
     }
 }
 
-fn update_viewer_from_mouse(
+fn update_viewer_from_mouse_scrolling(viewer: &mut dyn Viewer, mouse_wheel_movement: f32) {
+    if mouse_wheel_movement == 0.0 {
+        return;
+    }
+
+    if mouse_wheel_movement > 0.0 {
+        viewer.zoom_by(MOUSE_ZOOM_IN_SPEED.pow(mouse_wheel_movement));
+    } else {
+        viewer.zoom_by(MOUSE_ZOOM_OUT_SPEED.pow(-mouse_wheel_movement));
+    }
+}
+
+fn update_viewer_from_mouse_position(
     viewer: &mut dyn Viewer,
     prev_state: &MouseState,
     curr_state: &MouseState,
@@ -100,6 +118,16 @@ fn update_viewer_from_mouse(
     let delta_x = curr_state.x() - prev_state.x();
     let delta_y = curr_state.y() - prev_state.y();
     viewer.move_by_pixels(-delta_x as f32, -delta_y as f32);
+}
+
+fn update_viewer_from_mouse(
+    viewer: &mut dyn Viewer,
+    prev_state: &MouseState,
+    curr_state: &MouseState,
+    mouse_wheel_movement: f32,
+) {
+    update_viewer_from_mouse_position(viewer, prev_state, curr_state);
+    update_viewer_from_mouse_scrolling(viewer, mouse_wheel_movement);
 }
 
 fn main() {
@@ -151,9 +179,29 @@ fn main() {
 
     let mut frame_start_time = Instant::now();
     'running: loop {
+        let mut mouse_wheel_movement: f32 = 0.0;
+
         for event in sdl_context.event_pump.poll_iter() {
             match event {
                 Event::Quit { .. } => break 'running,
+                Event::MouseWheel {
+                    timestamp: _,
+                    window_id: _,
+                    which: _,
+                    x: _,
+                    y: _,
+                    direction,
+                    precise_x: _,
+                    precise_y,
+                    mouse_x: _,
+                    mouse_y: _,
+                } => {
+                    mouse_wheel_movement = match direction {
+                        MouseWheelDirection::Normal => precise_y,
+                        MouseWheelDirection::Flipped => -precise_y,
+                        MouseWheelDirection::Unknown(_) => 0.0,
+                    }
+                }
                 _ => {}
             }
         }
@@ -180,7 +228,12 @@ fn main() {
 
         let mouse_state = sdl_context.event_pump.mouse_state();
         if let Some(prev_state) = last_mouse_state {
-            update_viewer_from_mouse(renderer.get_viewer(), &prev_state, &mouse_state);
+            update_viewer_from_mouse(
+                renderer.get_viewer(),
+                &prev_state,
+                &mouse_state,
+                mouse_wheel_movement,
+            );
         }
         last_mouse_state = Some(mouse_state.clone());
     }
