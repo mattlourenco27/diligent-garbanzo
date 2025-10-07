@@ -83,6 +83,14 @@ fn update_viewer_from_mouse(
         return;
     }
 
+    if curr_state.x() < 0
+        || curr_state.x() as u32 >= viewer.width()
+        || curr_state.y() < 0
+        || curr_state.y() as u32 >= viewer.height()
+    {
+        return;
+    }
+
     let delta_x = curr_state.x() - prev_state.x();
     let delta_y = curr_state.y() - prev_state.y();
     viewer.move_by_pixels(-delta_x as f32, -delta_y as f32);

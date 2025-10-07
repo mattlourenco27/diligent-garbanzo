@@ -20,6 +20,14 @@ struct CanvasViewer {
 }
 
 impl Viewer for CanvasViewer {
+    fn height(&self) -> u32 {
+        self.height_px
+    }
+
+    fn width(&self) -> u32 {
+        self.width_px
+    }
+
     fn center_on_object(&mut self, object: &Object) {
         let object_radius = object.svg_inst.dimension.clone() * 0.5;
         self.center[0] = object.position[0] + object_radius[0];

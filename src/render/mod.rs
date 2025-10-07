@@ -9,6 +9,9 @@ pub mod triangulation;
 /// Keep in mind that moving the camera in one direction will seems as if everything on the screen
 /// is moving in the opposite direction.
 pub trait Viewer {
+    fn height(&self) -> u32;
+    fn width(&self) -> u32;
+
     fn center_on_object(&mut self, object: &Object);
 
     fn move_to_world_coords(&mut self, new_center: Vector2D<f32>);
