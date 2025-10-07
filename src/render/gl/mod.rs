@@ -650,14 +650,6 @@ struct GLViewer {
 }
 
 impl Viewer for GLViewer {
-    fn height(&self) -> u32 {
-        self.height_px
-    }
-
-    fn width(&self) -> u32 {
-        self.width_px
-    }
-
     fn center_on_object(&mut self, object: &Object) {
         let object_radius = object.svg_inst.dimension.clone() * 0.5;
         self.center[0] = object.position[0] + object_radius[0];
@@ -709,9 +701,6 @@ impl Viewer for GLViewer {
 
 impl GLViewer {
     fn new(width_px: u32, height_px: u32) -> Self {
-        let width_px = if width_px < 100 { 100 } else { width_px };
-        let height_px = if height_px < 100 { 100 } else { height_px };
-
         const DEFAULT_CENTER: Vector2D<f32> = Vector2D::ZERO;
         const DEFAULT_ZOOM: f32 = 1.0;
 
@@ -725,6 +714,16 @@ impl GLViewer {
                 DEFAULT_ZOOM,
                 width_px as f32 / height_px as f32,
             ),
+        }
+    }
+
+    fn resize(&mut self, new_width: u32, new_height: u32) {
+        self.width_px = new_width;
+        self.height_px = new_height;
+        self.update_norm_to_self_transform();
+
+        unsafe {
+            gl::Viewport(0, 0, new_width as i32, new_height as i32);
         }
     }
 
@@ -803,6 +802,22 @@ impl GLRenderer {
 impl Renderer for GLRenderer {
     fn get_viewer(&mut self) -> &mut dyn Viewer {
         &mut self.viewer
+    }
+
+    fn height(&self) -> u32 {
+        self.viewer.height_px
+    }
+
+    fn width(&self) -> u32 {
+        self.viewer.width_px
+    }
+
+    fn resize_window(&mut self, mut new_width: u32, mut new_height: u32) {
+        super::bound_window_size(&mut new_width, &mut new_height);
+        self.viewer.resize(new_width, new_height);
+        self.window
+            .set_size(new_width, new_height)
+            .unwrap();
     }
 
     fn clear(&mut self) {

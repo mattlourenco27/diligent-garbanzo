@@ -2,14 +2,14 @@ use std::{env, ffi::OsString, path::PathBuf, time::Instant};
 
 use num_traits::Pow;
 use sdl2::{
-    event::Event,
+    event::{Event, WindowEvent},
     keyboard::KeyboardState,
     mouse::{MouseState, MouseWheelDirection},
 };
 
 use drawsvg::{
     objects::{svg, ObjectMgr},
-    render::Viewer,
+    render::Renderer,
     sdl_wrapper::SDLContext,
     tools::FpsCounter,
 };
@@ -53,11 +53,13 @@ fn parse_args() -> Option<Args> {
 }
 
 fn update_viewer_from_keyboard(
-    viewer: &mut dyn Viewer,
+    renderer: &mut dyn Renderer,
     keyboard_state: &KeyboardState,
     us_of_frame: f32,
     object_mgr: &ObjectMgr,
 ) {
+    let viewer = renderer.get_viewer();
+
     if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::I) {
         viewer.zoom_by(KEYBOARD_ZOOM_IN_SPEED.pow(us_of_frame));
     }
@@ -83,20 +85,24 @@ fn update_viewer_from_keyboard(
     }
 }
 
-fn update_viewer_from_mouse_scrolling(viewer: &mut dyn Viewer, mouse_wheel_movement: f32) {
+fn update_viewer_from_mouse_scrolling(renderer: &mut dyn Renderer, mouse_wheel_movement: f32) {
     if mouse_wheel_movement == 0.0 {
         return;
     }
 
     if mouse_wheel_movement > 0.0 {
-        viewer.zoom_by(MOUSE_ZOOM_IN_SPEED.pow(mouse_wheel_movement));
+        renderer
+            .get_viewer()
+            .zoom_by(MOUSE_ZOOM_IN_SPEED.pow(mouse_wheel_movement));
     } else {
-        viewer.zoom_by(MOUSE_ZOOM_OUT_SPEED.pow(-mouse_wheel_movement));
+        renderer
+            .get_viewer()
+            .zoom_by(MOUSE_ZOOM_OUT_SPEED.pow(-mouse_wheel_movement));
     }
 }
 
 fn update_viewer_from_mouse_position(
-    viewer: &mut dyn Viewer,
+    renderer: &mut dyn Renderer,
     prev_state: &MouseState,
     curr_state: &MouseState,
 ) {
@@ -105,26 +111,28 @@ fn update_viewer_from_mouse_position(
     }
 
     if curr_state.x() < 0
-        || curr_state.x() as u32 >= viewer.width()
+        || curr_state.x() as u32 >= renderer.width()
         || curr_state.y() < 0
-        || curr_state.y() as u32 >= viewer.height()
+        || curr_state.y() as u32 >= renderer.height()
     {
         return;
     }
 
     let delta_x = curr_state.x() - prev_state.x();
     let delta_y = curr_state.y() - prev_state.y();
-    viewer.move_by_pixels(-delta_x as f32, -delta_y as f32);
+    renderer
+        .get_viewer()
+        .move_by_pixels(-delta_x as f32, -delta_y as f32);
 }
 
 fn update_viewer_from_mouse(
-    viewer: &mut dyn Viewer,
+    renderer: &mut dyn Renderer,
     prev_state: &MouseState,
     curr_state: &MouseState,
     mouse_wheel_movement: f32,
 ) {
-    update_viewer_from_mouse_position(viewer, prev_state, curr_state);
-    update_viewer_from_mouse_scrolling(viewer, mouse_wheel_movement);
+    update_viewer_from_mouse_position(renderer, prev_state, curr_state);
+    update_viewer_from_mouse_scrolling(renderer, mouse_wheel_movement);
 }
 
 fn main() {
@@ -199,6 +207,20 @@ fn main() {
                         MouseWheelDirection::Unknown(_) => 0.0,
                     }
                 }
+                Event::Window {
+                    timestamp: _,
+                    window_id: _,
+                    win_event,
+                } => match win_event {
+                    WindowEvent::Resized(width, height)
+                    | WindowEvent::SizeChanged(width, height) => {
+                        if width < 0 || height < 0 {
+                            continue;
+                        }
+                        renderer.resize_window(width as u32, height as u32);
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
         }
@@ -217,7 +239,7 @@ fn main() {
         frame_counter.incr_frame_count();
 
         update_viewer_from_keyboard(
-            renderer.get_viewer(),
+            renderer.as_mut(),
             &sdl_context.event_pump.keyboard_state(),
             us_of_frame as f32,
             &object_mgr,
@@ -226,7 +248,7 @@ fn main() {
         let mouse_state = sdl_context.event_pump.mouse_state();
         if let Some(prev_state) = last_mouse_state {
             update_viewer_from_mouse(
-                renderer.get_viewer(),
+                renderer.as_mut(),
                 &prev_state,
                 &mouse_state,
                 mouse_wheel_movement,

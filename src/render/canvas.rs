@@ -20,14 +20,6 @@ struct CanvasViewer {
 }
 
 impl Viewer for CanvasViewer {
-    fn height(&self) -> u32 {
-        self.height_px
-    }
-
-    fn width(&self) -> u32 {
-        self.width_px
-    }
-
     fn center_on_object(&mut self, object: &Object) {
         let object_radius = object.svg_inst.dimension.clone() * 0.5;
         self.center[0] = object.position[0] + object_radius[0];
@@ -57,10 +49,7 @@ impl Viewer for CanvasViewer {
     }
 
     fn move_by_pixels(&mut self, delta_x: f32, delta_y: f32) {
-        self.move_by_world_coords(
-            delta_x,
-            delta_y,
-        )
+        self.move_by_world_coords(delta_x, delta_y)
     }
 
     fn zoom_to(&mut self, new_zoom: f32) {
@@ -76,9 +65,6 @@ impl Viewer for CanvasViewer {
 
 impl CanvasViewer {
     fn new(width_px: u32, height_px: u32) -> Self {
-        let width_px = if width_px < 100 { 100 } else { width_px };
-        let height_px = if height_px < 100 { 100 } else { height_px };
-
         const DEFAULT_CENTER: Vector2D<f32> = Vector2D::ZERO;
         const DEFAULT_ZOOM: f32 = 1.0;
         Self {
@@ -93,6 +79,12 @@ impl CanvasViewer {
                 height_px,
             ),
         }
+    }
+
+    fn resize(&mut self, new_width: u32, new_height: u32) {
+        self.width_px = new_width;
+        self.height_px = new_height;
+        self.update_norm_to_self_transform();
     }
 
     fn norm_to_viewer(&self, position: &Vector2D<f32>) -> Vector2D<f32> {
@@ -216,6 +208,23 @@ impl<'a> CanvasRenderer<'a> {
 impl<'a> Renderer for CanvasRenderer<'a> {
     fn get_viewer(&mut self) -> &mut dyn Viewer {
         &mut self.viewer
+    }
+
+    fn height(&self) -> u32 {
+        self.viewer.height_px
+    }
+
+    fn width(&self) -> u32 {
+        self.viewer.width_px
+    }
+
+    fn resize_window(&mut self, mut new_width: u32, mut new_height: u32) {
+        super::bound_window_size(&mut new_width, &mut new_height);
+        self.viewer.resize(new_width, new_height);
+        self.canvas
+            .window_mut()
+            .set_size(new_width, new_height)
+            .unwrap();
     }
 
     fn clear(&mut self) {

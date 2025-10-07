@@ -1,6 +1,4 @@
-use sdl2::{
-    EventPump, Sdl, VideoSubsystem,
-};
+use sdl2::{EventPump, Sdl, VideoSubsystem};
 
 use crate::{
     objects::ObjectMgr,
@@ -31,7 +29,12 @@ impl SDLContext {
         height: u32,
         object_mgr: &'a ObjectMgr,
     ) -> Result<Box<dyn Renderer + 'a>, String> {
-        let window = match self.video_subsystem.window(title, width, height).build() {
+        let window = match self
+            .video_subsystem
+            .window(title, width, height)
+            .resizable()
+            .build()
+        {
             Ok(window) => window,
             Err(err) => return Err(format!("{err}")),
         };
@@ -56,6 +59,7 @@ impl SDLContext {
         let window = match self
             .video_subsystem
             .window(title, width, height)
+            .resizable()
             .opengl()
             .build()
         {
