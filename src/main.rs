@@ -1,13 +1,13 @@
 use std::{env, ffi::OsString, path::PathBuf, time::Instant};
 
 use num_traits::Pow;
-use sdl2::event::Event;
+use sdl2::{event::Event, mouse::MouseState};
 
 use drawsvg::{
     objects::{svg, ObjectMgr},
+    render::Viewer,
     sdl_wrapper::SDLContext,
     tools::FpsCounter,
-    vector::Vector2D,
 };
 
 // Measured in pixels
@@ -49,6 +49,20 @@ fn parse_args() -> Option<Args> {
     });
 }
 
+fn update_viewer_from_mouse(
+    viewer: &mut dyn Viewer,
+    prev_state: &MouseState,
+    curr_state: &MouseState,
+) {
+    if !prev_state.left() {
+        return;
+    }
+
+    let delta_x = curr_state.x() - prev_state.x();
+    let delta_y = curr_state.y() - prev_state.y();
+    viewer.move_by_pixels(-delta_x as f32, -delta_y as f32);
+}
+
 fn main() {
     let args = match parse_args() {
         None => return,
@@ -74,7 +88,12 @@ fn main() {
         }
     };
 
-    let mut renderer = match sdl_context.build_new_gl_window(WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT, &object_mgr) {
+    let mut renderer = match sdl_context.build_new_gl_window(
+        WINDOW_TITLE,
+        WINDOW_WIDTH,
+        WINDOW_HEIGHT,
+        &object_mgr,
+    ) {
         Ok(renderer) => renderer,
         Err(err) => {
             println!("Error while building a new window: {}", err);
@@ -85,6 +104,8 @@ fn main() {
     renderer
         .get_viewer()
         .center_on_object(object_mgr.get_objects().get(0).unwrap());
+
+    let mut last_mouse_state: Option<sdl2::mouse::MouseState> = None;
 
     let mut frame_counter = FpsCounter::new();
     frame_counter.begin_measuring();
@@ -113,22 +134,40 @@ fn main() {
 
         let keyboard_state = sdl_context.event_pump.keyboard_state();
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::I) {
-            renderer.get_viewer().zoom_by(ZOOM_IN_SPEED.pow(us_of_frame as f32));
+            renderer
+                .get_viewer()
+                .zoom_by(ZOOM_IN_SPEED.pow(us_of_frame as f32));
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::O) {
-            renderer.get_viewer().zoom_by(ZOOM_OUT_SPEED.pow(us_of_frame as f32));
+            renderer
+                .get_viewer()
+                .zoom_by(ZOOM_OUT_SPEED.pow(us_of_frame as f32));
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Left) {
-            renderer.get_viewer().move_by(Vector2D::from([-(CAMERA_MOVE_SPEED * us_of_frame as f32), 0.0]));
+            renderer
+                .get_viewer()
+                .move_by_world_coords(-CAMERA_MOVE_SPEED * us_of_frame as f32, 0.0);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Up) {
-            renderer.get_viewer().move_by(Vector2D::from([0.0, -(CAMERA_MOVE_SPEED * us_of_frame as f32)]));
+            renderer
+                .get_viewer()
+                .move_by_world_coords(0.0, -CAMERA_MOVE_SPEED * us_of_frame as f32);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Right) {
-            renderer.get_viewer().move_by(Vector2D::from([(CAMERA_MOVE_SPEED * us_of_frame as f32), 0.0]));
+            renderer
+                .get_viewer()
+                .move_by_world_coords(CAMERA_MOVE_SPEED * us_of_frame as f32, 0.0);
         }
         if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Down) {
-            renderer.get_viewer().move_by(Vector2D::from([0.0, (CAMERA_MOVE_SPEED * us_of_frame as f32)]));
+            renderer
+                .get_viewer()
+                .move_by_world_coords(0.0, CAMERA_MOVE_SPEED * us_of_frame as f32);
         }
+
+        let mouse_state = sdl_context.event_pump.mouse_state();
+        if let Some(prev_state) = last_mouse_state {
+            update_viewer_from_mouse(renderer.get_viewer(), &prev_state, &mouse_state);
+        }
+        last_mouse_state = Some(mouse_state.clone());
     }
 }

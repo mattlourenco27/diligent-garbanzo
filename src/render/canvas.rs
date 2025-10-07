@@ -12,7 +12,8 @@ use crate::{
 };
 
 struct CanvasViewer {
-    window_size: Vector2D<u32>,
+    width_px: u32,
+    height_px: u32,
     center: Vector2D<f32>,
     zoom: f32,
     norm_to_self_transform: Matrix3x3<f32>,
@@ -24,10 +25,10 @@ impl Viewer for CanvasViewer {
         self.center[0] = object.position[0] + object_radius[0];
         self.center[1] = object.position[1] + object_radius[1];
 
-        let zoom_x = self.window_size[0] as f32 / object.svg_inst.dimension[0];
-        let zoom_y = self.window_size[1] as f32 / object.svg_inst.dimension[1];
+        let zoom_x = self.width_px as f32 / object.svg_inst.dimension[0];
+        let zoom_y = self.height_px as f32 / object.svg_inst.dimension[1];
 
-        self.zoom = std::cmp::min_by(zoom_x, zoom_y, |x, y| x.partial_cmp(y).unwrap());
+        self.zoom = zoom_x.min(zoom_y);
 
         if self.zoom.is_infinite() {
             self.zoom = 1.0;
@@ -36,14 +37,22 @@ impl Viewer for CanvasViewer {
         self.update_norm_to_self_transform();
     }
 
-    fn move_to(&mut self, new_center: Vector2D<f32>) {
+    fn move_to_world_coords(&mut self, new_center: Vector2D<f32>) {
         self.center = new_center;
         self.update_norm_to_self_transform();
     }
 
-    fn move_by(&mut self, delta_center: Vector2D<f32>) {
+    fn move_by_world_coords(&mut self, delta_x: f32, delta_y: f32) {
+        let delta_center = Vector2D::from([delta_x, delta_y]);
         self.center += delta_center * (1.0 / self.zoom);
         self.update_norm_to_self_transform();
+    }
+
+    fn move_by_pixels(&mut self, delta_x: f32, delta_y: f32) {
+        self.move_by_world_coords(
+            delta_x / self.width_px as f32,
+            delta_y / self.height_px as f32,
+        )
     }
 
     fn zoom_to(&mut self, new_zoom: f32) {
@@ -58,18 +67,23 @@ impl Viewer for CanvasViewer {
 }
 
 impl CanvasViewer {
-    fn new(window_size: Vector2D<u32>) -> Self {
+    fn new(width_px: u32, height_px: u32) -> Self {
+        let width_px = if width_px < 100 { 100 } else { width_px };
+        let height_px = if height_px < 100 { 100 } else { height_px };
+
         const DEFAULT_CENTER: Vector2D<f32> = Vector2D::ZERO;
         const DEFAULT_ZOOM: f32 = 1.0;
         Self {
+            width_px,
+            height_px,
             center: DEFAULT_CENTER,
             zoom: DEFAULT_ZOOM,
             norm_to_self_transform: Self::generate_norm_to_self_transform(
                 &DEFAULT_CENTER,
                 DEFAULT_ZOOM,
-                &window_size,
+                width_px,
+                height_px,
             ),
-            window_size,
         }
     }
 
@@ -81,7 +95,8 @@ impl CanvasViewer {
     fn generate_norm_to_self_transform(
         center: &Vector2D<f32>,
         zoom: f32,
-        window_size: &Vector2D<u32>,
+        width_px: u32,
+        height_px: u32,
     ) -> Matrix3x3<f32> {
         // Translate to viewer position
         let mut position_matrix = Matrix3x3::IDENTITY3X3;
@@ -95,15 +110,19 @@ impl CanvasViewer {
 
         // Move origin to center of the viewer
         let mut center_matrix = Matrix3x3::IDENTITY3X3;
-        center_matrix[2][0] = window_size[0] as f32 / 2.0;
-        center_matrix[2][1] = window_size[1] as f32 / 2.0;
+        center_matrix[2][0] = width_px as f32 / 2.0;
+        center_matrix[2][1] = height_px as f32 / 2.0;
 
         &position_matrix * &zoom_matrix * &center_matrix
     }
 
     fn update_norm_to_self_transform(&mut self) {
-        self.norm_to_self_transform =
-            Self::generate_norm_to_self_transform(&self.center, self.zoom, &self.window_size);
+        self.norm_to_self_transform = Self::generate_norm_to_self_transform(
+            &self.center,
+            self.zoom,
+            self.width_px,
+            self.height_px,
+        );
     }
 }
 
@@ -115,11 +134,11 @@ pub struct CanvasRenderer<'a> {
 
 impl<'a> CanvasRenderer<'a> {
     pub fn new(window: Window, object_mgr: &'a ObjectMgr) -> Result<Self, IntegerOrSdlError> {
-        let window_size: [u32; 2] = window.size().into();
+        let window_size = window.size();
         Ok(Self {
             canvas: window.into_canvas().present_vsync().build()?,
             object_mgr,
-            viewer: CanvasViewer::new(Vector2D::from(window_size)),
+            viewer: CanvasViewer::new(window_size.0, window_size.1),
         })
     }
 
@@ -218,7 +237,7 @@ mod tests {
     use super::CanvasViewer;
 
     fn new_viewer() -> CanvasViewer {
-        CanvasViewer::new(Vector2D::from([100, 100]))
+        CanvasViewer::new(100, 100)
     }
 
     #[test]
@@ -229,7 +248,7 @@ mod tests {
 
     #[test]
     fn pixels_at_viewer_center_map_to_the_screen_center() {
-        let viewer = CanvasViewer::new(Vector2D::from([100, 100]));
+        let viewer = CanvasViewer::new(100, 100);
         assert_eq!(
             viewer.norm_to_viewer(&viewer.center),
             Vector2D::from([50.0, 50.0])
@@ -302,7 +321,7 @@ mod tests {
 
     #[test]
     fn viewer_zooms_to_largest_dimension_of_object() {
-        let mut viewer = CanvasViewer::new(Vector2D::from([100, 100]));
+        let mut viewer = CanvasViewer::new(100, 100);
         let object = Object {
             position: Vector3D::from([4.0, -3.0, 1.0]),
             svg_inst: SVG {
@@ -337,7 +356,7 @@ mod tests {
         let mut viewer = new_viewer();
         let new_center = Vector2D::from([5.0, -5.0]);
 
-        viewer.move_to(new_center.clone());
+        viewer.move_to_world_coords(new_center.clone());
 
         assert_eq!(viewer.center, new_center);
     }
@@ -350,7 +369,7 @@ mod tests {
         let mut viewer = new_viewer();
         viewer.zoom_to(ZOOM_AMOUNT);
 
-        viewer.move_by(delta_position.clone());
+        viewer.move_by_world_coords(delta_position[0], delta_position[1]);
         let center_after_move = viewer.center.clone();
 
         assert_eq!(delta_position * (1.0 / ZOOM_AMOUNT), center_after_move);

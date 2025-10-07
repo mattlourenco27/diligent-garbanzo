@@ -642,9 +642,10 @@ impl Operation {
 }
 
 struct GLViewer {
+    width_px: u32,
+    height_px: u32,
     center: Vector2D<f32>,
     zoom: f32,
-    window_width_over_height: f32,
     norm_to_self_transform: Matrix3x3<f32>,
 }
 
@@ -659,7 +660,7 @@ impl Viewer for GLViewer {
         let zoom_x = 2.0 / object.svg_inst.dimension[0];
         let zoom_y = 2.0 / object.svg_inst.dimension[1];
 
-        self.zoom = std::cmp::min_by(zoom_x, zoom_y, |x, y| x.partial_cmp(y).unwrap());
+        self.zoom = zoom_x.min(zoom_y);
 
         if self.zoom.is_infinite() {
             self.zoom = 1.0;
@@ -668,14 +669,23 @@ impl Viewer for GLViewer {
         self.update_norm_to_self_transform();
     }
 
-    fn move_to(&mut self, new_center: Vector2D<f32>) {
+    fn move_to_world_coords(&mut self, new_center: Vector2D<f32>) {
         self.center = new_center;
         self.update_norm_to_self_transform();
     }
 
-    fn move_by(&mut self, delta_center: Vector2D<f32>) {
+    fn move_by_world_coords(&mut self, delta_x: f32, delta_y: f32) {
+        let delta_center = Vector2D::from([delta_x, delta_y]);
         self.center += delta_center * (1.0 / self.zoom);
         self.update_norm_to_self_transform();
+    }
+
+    fn move_by_pixels(&mut self, delta_x: f32, delta_y: f32) {
+        let min_dimension = self.width_px.min(self.height_px);
+        self.move_by_world_coords(
+            delta_x / min_dimension as f32 * 2.0,
+            delta_y / min_dimension as f32 * 2.0,
+        )
     }
 
     fn zoom_to(&mut self, new_zoom: f32) {
@@ -690,20 +700,23 @@ impl Viewer for GLViewer {
 }
 
 impl GLViewer {
-    fn new(window_size: Vector2D<u32>) -> Self {
+    fn new(width_px: u32, height_px: u32) -> Self {
+        let width_px = if width_px < 100 { 100 } else { width_px };
+        let height_px = if height_px < 100 { 100 } else { height_px };
+
         const DEFAULT_CENTER: Vector2D<f32> = Vector2D::ZERO;
         const DEFAULT_ZOOM: f32 = 1.0;
 
-        let window_width_over_height = window_size[0] as f32 / window_size[1] as f32;
         Self {
+            width_px,
+            height_px,
             center: DEFAULT_CENTER,
             zoom: DEFAULT_ZOOM,
             norm_to_self_transform: Self::generate_norm_to_self_transform(
                 &DEFAULT_CENTER,
                 DEFAULT_ZOOM,
-                window_width_over_height,
+                width_px as f32 / height_px as f32,
             ),
-            window_width_over_height,
         }
     }
 
@@ -739,7 +752,7 @@ impl GLViewer {
         self.norm_to_self_transform = Self::generate_norm_to_self_transform(
             &self.center,
             self.zoom,
-            self.window_width_over_height,
+            self.width_px as f32 / self.height_px as f32,
         );
     }
 }
@@ -754,7 +767,7 @@ pub struct GLRenderer {
 
 impl GLRenderer {
     pub fn new(window: Window, gl_ctx: GLContext, object_mgr: &ObjectMgr) -> Result<Self, String> {
-        let window_size: [u32; 2] = window.size().into();
+        let window_size = window.size();
 
         let mut shaders = ShaderMgr::new()?;
 
@@ -766,7 +779,7 @@ impl GLRenderer {
         let gl_renderer = Self {
             window,
             _gl_ctx: gl_ctx,
-            viewer: GLViewer::new(Vector2D::from(window_size)),
+            viewer: GLViewer::new(window_size.0, window_size.1),
             shaders: RefCell::new(shaders),
             operation: operations,
         };
@@ -820,7 +833,7 @@ mod tests {
     use super::GLViewer;
 
     fn new_viewer() -> GLViewer {
-        GLViewer::new(Vector2D::from([100, 100]))
+        GLViewer::new(100, 100)
     }
 
     fn norm_to_viewer(viewer: &GLViewer, position: &Vector2D<f32>) -> Vector2D<f32> {
@@ -946,7 +959,7 @@ mod tests {
         let mut viewer = new_viewer();
         let new_center = Vector2D::from([5.0, -5.0]);
 
-        viewer.move_to(new_center.clone());
+        viewer.move_to_world_coords(new_center.clone());
 
         assert_eq!(viewer.center, new_center);
     }
@@ -959,7 +972,7 @@ mod tests {
         let mut viewer = new_viewer();
         viewer.zoom_to(ZOOM_AMOUNT);
 
-        viewer.move_by(delta_position.clone());
+        viewer.move_by_world_coords(delta_position[0], delta_position[1]);
         let center_after_move = viewer.center.clone();
 
         assert_eq!(delta_position * (1.0 / ZOOM_AMOUNT), center_after_move);
