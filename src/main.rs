@@ -1,7 +1,7 @@
 use std::{env, ffi::OsString, path::PathBuf, time::Instant};
 
 use num_traits::Pow;
-use sdl2::{event::Event, mouse::MouseState};
+use sdl2::{event::Event, keyboard::KeyboardState, mouse::MouseState};
 
 use drawsvg::{
     objects::{svg, ObjectMgr},
@@ -47,6 +47,31 @@ fn parse_args() -> Option<Args> {
     return Some(Args {
         svg_path: PathBuf::from(args.into_iter().nth(1).unwrap()),
     });
+}
+
+fn update_viewer_from_keyboard(
+    viewer: &mut dyn Viewer,
+    us_of_frame: f32,
+    keyboard_state: &KeyboardState,
+) {
+    if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::I) {
+        viewer.zoom_by(ZOOM_IN_SPEED.pow(us_of_frame));
+    }
+    if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::O) {
+        viewer.zoom_by(ZOOM_OUT_SPEED.pow(us_of_frame));
+    }
+    if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Left) {
+        viewer.move_by_world_coords(-CAMERA_MOVE_SPEED * us_of_frame, 0.0);
+    }
+    if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Up) {
+        viewer.move_by_world_coords(0.0, -CAMERA_MOVE_SPEED * us_of_frame);
+    }
+    if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Right) {
+        viewer.move_by_world_coords(CAMERA_MOVE_SPEED * us_of_frame, 0.0);
+    }
+    if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Down) {
+        viewer.move_by_world_coords(0.0, CAMERA_MOVE_SPEED * us_of_frame);
+    }
 }
 
 fn update_viewer_from_mouse(
@@ -132,37 +157,11 @@ fn main() {
 
         frame_counter.incr_frame_count();
 
-        let keyboard_state = sdl_context.event_pump.keyboard_state();
-        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::I) {
-            renderer
-                .get_viewer()
-                .zoom_by(ZOOM_IN_SPEED.pow(us_of_frame as f32));
-        }
-        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::O) {
-            renderer
-                .get_viewer()
-                .zoom_by(ZOOM_OUT_SPEED.pow(us_of_frame as f32));
-        }
-        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Left) {
-            renderer
-                .get_viewer()
-                .move_by_world_coords(-CAMERA_MOVE_SPEED * us_of_frame as f32, 0.0);
-        }
-        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Up) {
-            renderer
-                .get_viewer()
-                .move_by_world_coords(0.0, -CAMERA_MOVE_SPEED * us_of_frame as f32);
-        }
-        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Right) {
-            renderer
-                .get_viewer()
-                .move_by_world_coords(CAMERA_MOVE_SPEED * us_of_frame as f32, 0.0);
-        }
-        if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Down) {
-            renderer
-                .get_viewer()
-                .move_by_world_coords(0.0, CAMERA_MOVE_SPEED * us_of_frame as f32);
-        }
+        update_viewer_from_keyboard(
+            renderer.get_viewer(),
+            us_of_frame as f32,
+            &sdl_context.event_pump.keyboard_state(),
+        );
 
         let mouse_state = sdl_context.event_pump.mouse_state();
         if let Some(prev_state) = last_mouse_state {
