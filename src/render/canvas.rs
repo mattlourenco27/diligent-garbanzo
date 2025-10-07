@@ -58,8 +58,8 @@ impl Viewer for CanvasViewer {
 
     fn move_by_pixels(&mut self, delta_x: f32, delta_y: f32) {
         self.move_by_world_coords(
-            delta_x / self.width_px as f32,
-            delta_y / self.height_px as f32,
+            delta_x,
+            delta_y,
         )
     }
 

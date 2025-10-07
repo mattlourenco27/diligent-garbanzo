@@ -18,11 +18,8 @@ use drawsvg::{
 const WINDOW_HEIGHT: u32 = 400;
 const WINDOW_WIDTH: u32 = 800;
 
-// Since OpenGL measures screen coordinates as two floating point numbers from -1.0 to 1.0,
-// this is measured as the number of OpenGL units to move the camera per microsecond.
-// To find the exact pixels / second, use the following formula:
-// CAMERA_MOVE_SPEED * 1/2 * min(WINDOW_HEIGHT, WINDOW_WIDTH) * 1_000_000
-const CAMERA_MOVE_SPEED: f32 = 0.000001;
+// Number of pixels to move per microsecond
+const CAMERA_MOVE_SPEED: f32 = 0.0002;
 
 // Fraction to zoom in or out by per microsecond.
 // A value of 2.0 would double the zoom every microsecond exponentially.
@@ -73,16 +70,16 @@ fn update_viewer_from_keyboard(
         }
     }
     if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Left) {
-        viewer.move_by_world_coords(-CAMERA_MOVE_SPEED * us_of_frame, 0.0);
+        viewer.move_by_pixels(-CAMERA_MOVE_SPEED * us_of_frame, 0.0);
     }
     if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Up) {
-        viewer.move_by_world_coords(0.0, -CAMERA_MOVE_SPEED * us_of_frame);
+        viewer.move_by_pixels(0.0, -CAMERA_MOVE_SPEED * us_of_frame);
     }
     if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Right) {
-        viewer.move_by_world_coords(CAMERA_MOVE_SPEED * us_of_frame, 0.0);
+        viewer.move_by_pixels(CAMERA_MOVE_SPEED * us_of_frame, 0.0);
     }
     if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::Down) {
-        viewer.move_by_world_coords(0.0, CAMERA_MOVE_SPEED * us_of_frame);
+        viewer.move_by_pixels(0.0, CAMERA_MOVE_SPEED * us_of_frame);
     }
 }
 
