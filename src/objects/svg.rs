@@ -503,9 +503,12 @@ impl Polyline {
 #[derive(Debug)]
 pub struct Rect {
     pub style: Style,
-    pub position: Vector2D<f32>,
-    pub dimension: Vector2D<f32>,
-    pub corners: Vector2D<f32>,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub rx: f32,
+    pub ry: f32,
 }
 
 impl Rect {
@@ -514,8 +517,8 @@ impl Rect {
 
         let mut x = 0.0;
         let mut y = 0.0;
-        let mut rx = 0.0;
-        let mut ry = 0.0;
+        let mut rx = None;
+        let mut ry = None;
         let mut width = 0.0;
         let mut height = 0.0;
 
@@ -524,8 +527,8 @@ impl Rect {
             match attribute.key {
                 b"x" => x = attribute.length()?,
                 b"y" => y = attribute.length()?,
-                b"rx" => rx = attribute.length()?,
-                b"ry" => ry = attribute.length()?,
+                b"rx" => rx = Some(attribute.length()?),
+                b"ry" => ry = Some(attribute.length()?),
                 b"width" => width = attribute.length()?,
                 b"height" => height = attribute.length()?,
                 _ => (),
@@ -539,11 +542,20 @@ impl Rect {
             }));
         }
 
+        let (rx, ry) = match (rx, ry) {
+            (None, None) => (0.0, 0.0),
+            (Some(val), None) | (None, Some(val)) => (val, val),
+            (Some(rx), Some(ry)) => (rx, ry),
+        };
+
         Ok(EmptyTag::Rect(Rect {
             style,
-            position: [x, y].into(),
-            dimension: [width, height].into(),
-            corners: [rx, ry].into(),
+            x,
+            y,
+            width,
+            height,
+            rx,
+            ry,
         }))
     }
 }
@@ -569,6 +581,113 @@ impl Polygon {
         }
 
         Ok(Self { style, points })
+    }
+}
+
+impl From<&Ellipse> for Polygon {
+    fn from(ellipse: &Ellipse) -> Self {
+        if ellipse.radius[0] <= 0.0 || ellipse.radius[1] <= 0.0 {
+            return Polygon {
+                style: ellipse.style.clone(),
+                points: Vec::new(),
+            }
+        }
+
+        const NUM_POINTS: u32 = 256;
+        const ANGLE_INCREMENT: f32 = core::f32::consts::PI * 2.0 / NUM_POINTS as f32;
+        let x0 = ellipse.center[0];
+        let y0 = ellipse.center[1];
+        let a = ellipse.radius[0];
+        let b = ellipse.radius[1];
+
+        let mut points = Vec::new();
+        points.reserve_exact(NUM_POINTS as usize);
+
+        for point in 0..NUM_POINTS {
+            let theta = point as f32 * ANGLE_INCREMENT;
+            points.push([x0 + a * theta.cos(), y0 + b * theta.sin()].into());
+        }
+
+        Polygon {
+            style: ellipse.style.clone(),
+            points,
+        }
+    }
+}
+
+impl From<&Rect> for Polygon {
+    fn from(rect: &Rect) -> Self {
+        if rect.width <= 0.0 && rect.height <= 0.0 {
+            return Polygon {
+                style: rect.style.clone(),
+                points: Vec::new(),
+            }
+        }
+
+        if rect.width <= 0.0 {
+            return Polygon {
+                style: rect.style.clone(),
+                points: vec![
+                    [rect.x, rect.y].into(),
+                    [rect.x, rect.y].into(),
+                    [rect.x, rect.y + rect.height].into(),
+                    [rect.x, rect.y + rect.height].into(),
+                ],
+            }
+        }
+
+        if rect.height <= 0.0 {
+            return Polygon {
+                style: rect.style.clone(),
+                points: vec![
+                    [rect.x, rect.y].into(),
+                    [rect.x + rect.width, rect.y].into(),
+                    [rect.x + rect.width, rect.y].into(),
+                    [rect.x, rect.y].into(),
+                ],
+            };
+        }
+        
+        if rect.rx <= 0.0 || rect.ry <= 0.0 {
+            return Polygon {
+                style: rect.style.clone(),
+                points: vec![
+                    [rect.x, rect.y].into(),
+                    [rect.x + rect.width, rect.y].into(),
+                    [rect.x + rect.width, rect.y + rect.height].into(),
+                    [rect.x, rect.y + rect.height].into(),
+                ],
+            };
+        }
+
+        let rx = if rect.rx > rect.width * 0.5 { rect.width * 0.5 } else { rect.rx };
+        let ry = if rect.ry > rect.height * 0.5 { rect.height * 0.5 } else { rect.ry };
+
+        // The four corners of this rectangle are equivalent to the four corners of an ellipse.
+
+        const POINTS_PER_CORNER: u32 = 64;
+        const ANGLE_INCREMENT: f32 = core::f32::consts::PI * 0.5 / POINTS_PER_CORNER as f32;
+        
+        let mut points = Vec::new();
+        points.reserve_exact(4 * (POINTS_PER_CORNER as usize + 1));
+        
+        let do_quarter_elipse = |points: &mut Vec<Vector2D<f32>>, x0: f32, y0: f32, starting_angle: f32| -> () {
+            // Add one point for the final fence post
+            for point in 0..(POINTS_PER_CORNER + 1) {
+                let theta = point as f32 * ANGLE_INCREMENT + starting_angle;
+                points.push([x0 + rx * theta.cos(), y0 + ry * theta.sin()].into());
+            }
+        };
+
+        do_quarter_elipse(&mut points, rect.x + rx, rect.y + ry, core::f32::consts::PI);
+        do_quarter_elipse(&mut points, rect.x + rect.width - rx, rect.y + ry, core::f32::consts::PI * 1.5);
+        do_quarter_elipse(&mut points, rect.x + rect.width - rx, rect.y + rect.height - ry, 0.0);
+        do_quarter_elipse(&mut points, rect.x + rx, rect.y + rect.height - ry, core::f32::consts::PI * 0.5);
+
+        Polygon {
+            style: rect.style.clone(),
+            points,
+        }
     }
 }
 
@@ -670,10 +789,11 @@ pub struct Style {
 
 impl Style {
     const COLOR_NONE: Color = Color::RGBA(0, 0, 0, 0);
+    const COLOR_BLACK: Color = Color::RGBA(0, 0, 0, core::u8::MAX);
 
     pub const DEFAULT: Self = Self {
-        stroke_color: Self::COLOR_NONE,
-        fill_color: Self::COLOR_NONE,
+        stroke_color: Self::COLOR_BLACK,
+        fill_color: Self::COLOR_BLACK,
         stroke_width: 1.0,
         miter_limit: 4.0,
         transform: Matrix3x3::IDENTITY3X3,

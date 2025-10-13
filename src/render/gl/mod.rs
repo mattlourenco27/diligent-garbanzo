@@ -108,13 +108,13 @@ impl OperationExtractor {
 
     fn load_empty_tag_vertices(&mut self, empty_tag: &EmptyTag) {
         match empty_tag {
-            EmptyTag::Ellipse(_ellipse) => unimplemented!(),
+            EmptyTag::Ellipse(ellipse) => self.load_ellipse(ellipse),
             EmptyTag::Image(_image) => unimplemented!(),
             EmptyTag::Line(line) => self.load_line(line),
             EmptyTag::Point(point) => self.load_point(point),
             EmptyTag::Polygon(polygon) => self.load_polygon(polygon),
             EmptyTag::Polyline(_polyline) => unimplemented!(),
-            EmptyTag::Rect(_rect) => unimplemented!(),
+            EmptyTag::Rect(rect) => self.load_rect(rect),
         }
     }
 
@@ -366,6 +366,14 @@ impl OperationExtractor {
                 }
             };
         }
+    }
+
+    fn load_ellipse(&mut self, ellipse: &Ellipse) {
+        self.load_polygon(&Polygon::from(ellipse));
+    }
+
+    fn load_rect(&mut self, rect: &Rect) {
+        self.load_polygon(&Polygon::from(rect));
     }
 }
 
