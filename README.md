@@ -1,6 +1,20 @@
 # Diligent Garbanzo
 
-He's great at drawing
+Diligent Garbanzo is a standard-compliant SVG renderer. By the nature of the SVG format, Diligent Garbanzo generates geometry at an infinite resolution.
+
+> This project is still in progress. Features like texture rendering are not yet ready.
+
+## Usage
+
+To render an SVG file, pass in the path to the file as a command-line argument
+
+```sh
+cargo run <path to your SVG file>
+```
+
+To move the SVG around your screen, you can use the `left-mouse-button` to click and drag or use the `arrow-keys`.
+
+To zoom in or out, you can use the `mouse-wheel` or the `i` / `o` keys on the keyboard.
 
 ## Installation
 
