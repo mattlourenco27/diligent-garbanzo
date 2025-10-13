@@ -27,10 +27,13 @@ const CAMERA_MOVE_SPEED: f32 = 0.0002;
 // (Don't you love it when things just work out to approximating 'e'?)
 const KEYBOARD_ZOOM_IN_SPEED: f32 = 1.000001;
 const KEYBOARD_ZOOM_OUT_SPEED: f32 = 1.0 / KEYBOARD_ZOOM_IN_SPEED;
+
+// Fraction to zoom in or out by when the mouse wheel ticks up or down by one.
+// A value of 1.1 increases the zoom by 1.1 per tick.
 const MOUSE_ZOOM_IN_SPEED: f32 = 1.1;
 const MOUSE_ZOOM_OUT_SPEED: f32 = 1.0 / MOUSE_ZOOM_IN_SPEED;
 
-const WINDOW_TITLE: &str = "My Window";
+const WINDOW_TITLE: &str = "Diligent Garbanzo";
 
 struct Args {
     svg_path: PathBuf,
