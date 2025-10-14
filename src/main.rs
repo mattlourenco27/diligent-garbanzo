@@ -55,6 +55,21 @@ fn parse_args() -> Option<Args> {
     });
 }
 
+fn update_vsync_settings(
+    sdl_context: &SDLContext,
+    keyboard_state: &KeyboardState,
+) -> Result<(), String> {
+    let video_sys = &sdl_context.video_subsystem;
+    if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::B) {
+        video_sys.gl_set_swap_interval(sdl2::video::SwapInterval::Immediate)?;
+    }
+    if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::V) {
+        video_sys.gl_set_swap_interval(sdl2::video::SwapInterval::VSync)?;
+    }
+
+    Ok(())
+}
+
 fn update_viewer_from_keyboard(
     renderer: &mut dyn Renderer,
     keyboard_state: &KeyboardState,
@@ -241,9 +256,16 @@ fn main() {
 
         frame_counter.incr_frame_count();
 
+        let keyboard_state = sdl_context.event_pump.keyboard_state();
+
+        match update_vsync_settings(&sdl_context, &keyboard_state) {
+            Err(err) => println!("Error while updating Vsync: {}", err),
+            _ => (),
+        };
+
         update_viewer_from_keyboard(
             renderer.as_mut(),
-            &sdl_context.event_pump.keyboard_state(),
+            &keyboard_state,
             us_of_frame as f32,
             &object_mgr,
         );

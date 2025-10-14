@@ -12,9 +12,23 @@ To render an SVG file, pass in the path to the file as a command-line argument
 cargo run <path to your SVG file>
 ```
 
-To move the SVG around your screen, you can use the `left-mouse-button` to click and drag or use the `arrow-keys`.
+### Controls
 
-To zoom in or out, you can use the `mouse-wheel` or the `i` / `o` keys on the keyboard.
+> Click and Drag : Move the SVG around your screen.
+>
+> Mouse Wheel : Zoom in or zoom out.
+>
+> Arrow Keys : Move the SVG around your screen
+>
+> I : Zoom in.
+>
+> O : Zoom out.
+>
+> R : Reset your viewer.
+>
+> V : Turn on Vsync.
+>
+> B : Turn on Benchmarking / turn off Vsync.
 
 ## Installation
 

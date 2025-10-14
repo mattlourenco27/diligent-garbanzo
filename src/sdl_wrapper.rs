@@ -70,6 +70,8 @@ impl SDLContext {
         let gl_ctx = window.gl_create_context().unwrap();
         gl::load_with(|name| self.video_subsystem.gl_get_proc_address(name) as *const _);
 
+        self.video_subsystem.gl_set_swap_interval(sdl2::video::SwapInterval::Immediate)?;
+
         let gl_attr = self.video_subsystem.gl_attr();
         debug_assert_eq!(gl_attr.context_profile(), sdl2::video::GLProfile::Core);
         debug_assert_eq!(gl_attr.context_version(), (3, 3));
