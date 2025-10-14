@@ -120,7 +120,7 @@ impl OperationExtractor {
             EmptyTag::Line(line) => self.load_line(line),
             EmptyTag::Point(point) => self.load_point(point),
             EmptyTag::Polygon(polygon) => self.load_polygon(polygon),
-            EmptyTag::Polyline(_polyline) => unimplemented!(),
+            EmptyTag::Polyline(polyline) => self.load_polyline(polyline),
             EmptyTag::Rect(rect) => self.load_rect(rect),
         }
     }
@@ -496,6 +496,140 @@ impl OperationExtractor {
                                         .clone()
                                         .transpose_symmetric(),
                                     thickness: polygon.style.stroke_width,
+                                },
+                                num_stroke_vertices as u32,
+                            )],
+                        }));
+                }
+            };
+        }
+    }
+
+    fn load_polyline(&mut self, polyline: &Polyline) {
+        if polyline.points.len() < 2 {
+            return;
+        }
+
+        let mut fill_vertex_data: Vec<f32> = Vec::new();
+        let mut fill_element_data: Vec<GLuint> = Vec::new();
+        let mut stroke_vertex_data: Vec<f32> = Vec::new();
+        let num_stroke_vertices = polyline.points.len() + 2; // Add space for adjacency information
+        let fill_color: GLColor = polyline.style.fill_color.into();
+        let stroke_color: GLColor = polyline.style.stroke_color.into();
+        let do_outline = stroke_color.3 > 0.0 && polyline.style.stroke_width > 0.0;
+        let mut do_fill = fill_color.3 > 0.0 && polyline.points.len() > 2;
+
+        let triangles = if do_fill {
+            crate::render::triangulation::triangulate(&polyline.points)
+        } else {
+            None
+        };
+        do_fill &= triangles.is_some();
+
+        if !do_outline && !do_fill {
+            return;
+        }
+
+        if do_fill {
+            fill_vertex_data.reserve_exact(
+                polyline.points.len() * (shaders::POS_SIZE + shaders::COLOR_SIZE) as usize,
+            );
+            let triangles = triangles.unwrap();
+            fill_element_data.reserve_exact(triangles.len() * 3);
+            for triangle in triangles.iter() {
+                fill_element_data.push(triangle[0] as GLuint);
+                fill_element_data.push(triangle[1] as GLuint);
+                fill_element_data.push(triangle[2] as GLuint);
+            }
+        }
+
+        if do_outline {
+            stroke_vertex_data.reserve_exact(
+                num_stroke_vertices * (shaders::POS_SIZE + shaders::COLOR_SIZE) as usize,
+            );
+
+            // Push a copy of the first point to buffer the adjacency information
+            let first_point = polyline.points.first().unwrap();
+            stroke_vertex_data.extend_from_slice(&[
+                first_point[0],
+                first_point[1],
+                stroke_color.0,
+                stroke_color.1,
+                stroke_color.2,
+                stroke_color.3,
+            ]);
+        }
+
+        for point in polyline.points.iter() {
+            if do_fill {
+                fill_vertex_data.extend_from_slice(&[
+                    point[0],
+                    point[1],
+                    fill_color.0,
+                    fill_color.1,
+                    fill_color.2,
+                    fill_color.3,
+                ]);
+            }
+
+            if do_outline {
+                stroke_vertex_data.extend_from_slice(&[
+                    point[0],
+                    point[1],
+                    stroke_color.0,
+                    stroke_color.1,
+                    stroke_color.2,
+                    stroke_color.3,
+                ]);
+            }
+        }
+
+        if do_fill {
+            self.data
+                .push(RawOperationData::FillPolygon(PolygonFillData {
+                    data: fill_vertex_data,
+                    fill_sequence: fill_element_data,
+                    transform: polyline.style.transform.clone().transpose_symmetric(),
+                }));
+        }
+
+        if do_outline {
+            // Push a copy of the last point to buffer adjacency information
+            let last_point = &polyline.points.last().unwrap();
+            stroke_vertex_data.extend_from_slice(&[
+                last_point[0],
+                last_point[1],
+                stroke_color.0,
+                stroke_color.1,
+                stroke_color.2,
+                stroke_color.3,
+            ]);
+
+            match self.data.last_mut() {
+                Some(RawOperationData::DrawAdjacentLines(line_data)) => {
+                    line_data.data.extend(stroke_vertex_data);
+                    line_data.sequence.push((
+                        DrawLineParams {
+                            draw_type: gl::LINE_STRIP_ADJACENCY,
+                            transform: polyline.style.transform.clone().transpose_symmetric(),
+                            thickness: polyline.style.stroke_width,
+                        },
+                        num_stroke_vertices as u32,
+                    ));
+                }
+                _ => {
+                    self.data
+                        .push(RawOperationData::DrawAdjacentLines(LineVertexData {
+                            data: stroke_vertex_data,
+                            sequence: vec![(
+                                DrawLineParams {
+                                    draw_type: gl::LINE_STRIP_ADJACENCY,
+                                    transform: polyline
+                                        .style
+                                        .transform
+                                        .clone()
+                                        .transpose_symmetric(),
+                                    thickness: polyline.style.stroke_width,
                                 },
                                 num_stroke_vertices as u32,
                             )],
