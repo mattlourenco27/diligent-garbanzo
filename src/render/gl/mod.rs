@@ -36,6 +36,7 @@ enum RawOperationData {
     DrawLines(LineVertexData),
     DrawAdjacentLines(LineVertexData),
     FillPolygon(PolygonFillData),
+    FillConvexPolygon(TriangleFanFillData),
 }
 
 #[derive(PartialEq)]
@@ -61,8 +62,14 @@ struct LineVertexData {
 }
 
 struct PolygonFillData {
-    vertices: Vec<f32>,
+    data: Vec<f32>,
     fill_sequence: Vec<GLuint>,
+    transform: Matrix3x3<f32>,
+}
+
+struct TriangleFanFillData {
+    data: Vec<f32>,
+    num_vertices: u32,
     transform: Matrix3x3<f32>,
 }
 
@@ -306,7 +313,7 @@ impl OperationExtractor {
         if do_fill {
             self.data
                 .push(RawOperationData::FillPolygon(PolygonFillData {
-                    vertices: fill_vertex_data,
+                    data: fill_vertex_data,
                     fill_sequence: fill_element_data,
                     transform: polygon.style.transform.clone().transpose_symmetric(),
                 }));
@@ -368,12 +375,142 @@ impl OperationExtractor {
         }
     }
 
+    // Convex polygons can use a triangle-fan instead of triangulation
+    fn load_convex_polygon(&mut self, polygon: &Polygon) {
+        if polygon.points.len() < 3 {
+            return;
+        }
+
+        let mut fill_vertex_data: Vec<f32> = Vec::new();
+        let mut stroke_vertex_data: Vec<f32> = Vec::new();
+        let num_stroke_vertices = polygon.points.len() + 3; // Add space for adjacency information
+        let fill_color: GLColor = polygon.style.fill_color.into();
+        let stroke_color: GLColor = polygon.style.stroke_color.into();
+        let do_outline = stroke_color.3 > 0.0 && polygon.style.stroke_width > 0.0;
+        let do_fill = fill_color.3 > 0.0;
+
+        if !do_outline && !do_fill {
+            return;
+        }
+
+        if do_fill {
+            fill_vertex_data.reserve_exact(
+                polygon.points.len() * (shaders::POS_SIZE + shaders::COLOR_SIZE) as usize,
+            );
+        }
+
+        if do_outline {
+            stroke_vertex_data.reserve_exact(
+                num_stroke_vertices * (shaders::POS_SIZE + shaders::COLOR_SIZE) as usize,
+            );
+
+            // Push a copy of the last point to the front to give adjacency information for the first edge
+            let last_point = polygon.points.last().unwrap();
+            stroke_vertex_data.extend_from_slice(&[
+                last_point[0],
+                last_point[1],
+                stroke_color.0,
+                stroke_color.1,
+                stroke_color.2,
+                stroke_color.3,
+            ]);
+        }
+
+        for point in polygon.points.iter() {
+            if do_fill {
+                fill_vertex_data.extend_from_slice(&[
+                    point[0],
+                    point[1],
+                    fill_color.0,
+                    fill_color.1,
+                    fill_color.2,
+                    fill_color.3,
+                ]);
+            }
+
+            if do_outline {
+                stroke_vertex_data.extend_from_slice(&[
+                    point[0],
+                    point[1],
+                    stroke_color.0,
+                    stroke_color.1,
+                    stroke_color.2,
+                    stroke_color.3,
+                ]);
+            }
+        }
+
+        if do_fill {
+            self.data
+                .push(RawOperationData::FillConvexPolygon(TriangleFanFillData {
+                    data: fill_vertex_data,
+                    num_vertices: polygon.points.len() as u32,
+                    transform: polygon.style.transform.clone().transpose_symmetric(),
+                }));
+        }
+
+        if do_outline {
+            // Wrap around to include enough information to close the loop
+            let first_point = &polygon.points[0];
+            stroke_vertex_data.extend_from_slice(&[
+                first_point[0],
+                first_point[1],
+                stroke_color.0,
+                stroke_color.1,
+                stroke_color.2,
+                stroke_color.3,
+            ]);
+
+            let second_point = &polygon.points[1];
+            stroke_vertex_data.extend_from_slice(&[
+                second_point[0],
+                second_point[1],
+                stroke_color.0,
+                stroke_color.1,
+                stroke_color.2,
+                stroke_color.3,
+            ]);
+
+            match self.data.last_mut() {
+                Some(RawOperationData::DrawAdjacentLines(line_data)) => {
+                    line_data.data.extend(stroke_vertex_data);
+                    line_data.sequence.push((
+                        DrawLineParams {
+                            draw_type: gl::LINE_STRIP_ADJACENCY,
+                            transform: polygon.style.transform.clone().transpose_symmetric(),
+                            thickness: polygon.style.stroke_width,
+                        },
+                        num_stroke_vertices as u32,
+                    ));
+                }
+                _ => {
+                    self.data
+                        .push(RawOperationData::DrawAdjacentLines(LineVertexData {
+                            data: stroke_vertex_data,
+                            sequence: vec![(
+                                DrawLineParams {
+                                    draw_type: gl::LINE_STRIP_ADJACENCY,
+                                    transform: polygon
+                                        .style
+                                        .transform
+                                        .clone()
+                                        .transpose_symmetric(),
+                                    thickness: polygon.style.stroke_width,
+                                },
+                                num_stroke_vertices as u32,
+                            )],
+                        }));
+                }
+            };
+        }
+    }
+
     fn load_ellipse(&mut self, ellipse: &Ellipse) {
-        self.load_polygon(&Polygon::from(ellipse));
+        self.load_convex_polygon(&Polygon::from(ellipse));
     }
 
     fn load_rect(&mut self, rect: &Rect) {
-        self.load_polygon(&Polygon::from(rect));
+        self.load_convex_polygon(&Polygon::from(rect));
     }
 }
 
@@ -479,11 +616,42 @@ impl Drop for TriangleVertexArray {
     }
 }
 
+struct TriangleFanVertexArray {
+    array_index: GLuint,
+    buffer_index: GLuint,
+    transform: Matrix3x3<f32>,
+    num_vertices: u32,
+}
+
+impl TriangleFanVertexArray {
+    unsafe fn draw(&self, shaders: &mut ShaderMgr) {
+        shaders.activate(shaders::Shader::Basic);
+        gl::BindVertexArray(self.array_index);
+        gl::BindBuffer(gl::ARRAY_BUFFER, self.buffer_index);
+        shaders.set_svg_transform(self.transform.clone());
+        gl::DrawArrays(
+            gl::TRIANGLE_FAN,
+            0,
+            self.num_vertices as GLsizei,
+        );
+    }
+}
+
+impl Drop for TriangleFanVertexArray {
+    fn drop(&mut self) {
+        unsafe {
+            gl::DeleteBuffers(1, &self.buffer_index);
+            gl::DeleteVertexArrays(1, &self.array_index);
+        }
+    }
+}
+
 enum Operation {
     DrawPoints(PointArray),
     DrawLines(LineVertexArray),
     DrawAdjacentLines(LineVertexArray),
     FillPolygon(TriangleVertexArray),
+    FillConvexPolygon(TriangleFanVertexArray),
 }
 
 impl Operation {
@@ -601,9 +769,9 @@ impl Operation {
                         gl::BindBuffer(gl::ARRAY_BUFFER, triangle_vertex_array.buffer_index);
                         gl::BufferData(
                             gl::ARRAY_BUFFER,
-                            (polygon_data.vertices.len() * std::mem::size_of::<f32>())
+                            (polygon_data.data.len() * std::mem::size_of::<f32>())
                                 as gl::types::GLsizeiptr,
-                            polygon_data.vertices.as_ptr() as *const c_void,
+                            polygon_data.data.as_ptr() as *const c_void,
                             gl::STATIC_DRAW,
                         );
 
@@ -625,6 +793,35 @@ impl Operation {
 
                     operations.push(Operation::FillPolygon(triangle_vertex_array))
                 }
+                RawOperationData::FillConvexPolygon(triangle_fan_data) => {
+                    let mut triangle_fan_vertex_array = TriangleFanVertexArray {
+                        array_index: 0,
+                        buffer_index: 0,
+                        transform: triangle_fan_data.transform,
+                        num_vertices: triangle_fan_data.num_vertices,
+                    };
+
+                    unsafe {
+                        shaders.activate(shaders::Shader::Basic);
+
+                        gl::GenVertexArrays(1, &mut triangle_fan_vertex_array.array_index);
+                        gl::BindVertexArray(triangle_fan_vertex_array.array_index);
+
+                        gl::GenBuffers(1, &mut triangle_fan_vertex_array.buffer_index);
+                        gl::BindBuffer(gl::ARRAY_BUFFER, triangle_fan_vertex_array.buffer_index);
+                        gl::BufferData(
+                            gl::ARRAY_BUFFER,
+                            (triangle_fan_data.data.len() * std::mem::size_of::<f32>())
+                                as gl::types::GLsizeiptr,
+                            triangle_fan_data.data.as_ptr() as *const c_void,
+                            gl::STATIC_DRAW,
+                        );
+
+                        shaders.bind_attributes_to_vertex_array();
+                    }
+
+                    operations.push(Operation::FillConvexPolygon(triangle_fan_vertex_array))
+                }
             }
         }
 
@@ -643,6 +840,9 @@ impl Operation {
                 }
                 Operation::FillPolygon(element_buffer) => {
                     element_buffer.draw(shaders);
+                }
+                Operation::FillConvexPolygon(triangle_fan) => {
+                    triangle_fan.draw(shaders);
                 }
             }
         }
@@ -823,9 +1023,7 @@ impl Renderer for GLRenderer {
     fn resize_window(&mut self, mut new_width: u32, mut new_height: u32) {
         super::bound_window_size(&mut new_width, &mut new_height);
         self.viewer.resize(new_width, new_height);
-        self.window
-            .set_size(new_width, new_height)
-            .unwrap();
+        self.window.set_size(new_width, new_height).unwrap();
     }
 
     fn clear(&mut self) {
