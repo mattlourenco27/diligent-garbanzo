@@ -12,6 +12,7 @@ use crate::{
     matrix::Matrix3x3,
     objects::{svg::*, Object, ObjectMgr},
     render::{gl::shaders::ShaderMgr, Renderer, Viewer},
+    texture::Texture,
     vector::Vector2D,
 };
 
@@ -37,6 +38,7 @@ enum RawOperationData {
     DrawAdjacentLines(LineVertexData),
     FillPolygon(PolygonFillData),
     FillConvexPolygon(TriangleFanFillData),
+    DrawImage(TextureData),
 }
 
 #[derive(PartialEq)]
@@ -70,6 +72,12 @@ struct PolygonFillData {
 struct TriangleFanFillData {
     data: Vec<f32>,
     num_vertices: u32,
+    transform: Matrix3x3<f32>,
+}
+
+struct TextureData {
+    data: [f32; (shaders::POS_SIZE + shaders::TEX_COORD_SIZE) as usize * 4],
+    texture: Texture,
     transform: Matrix3x3<f32>,
 }
 
@@ -116,7 +124,7 @@ impl OperationExtractor {
     fn load_empty_tag_vertices(&mut self, empty_tag: &EmptyTag) {
         match empty_tag {
             EmptyTag::Ellipse(ellipse) => self.load_ellipse(ellipse),
-            EmptyTag::Image(_image) => unimplemented!(),
+            EmptyTag::Image(image) => self.load_image(image),
             EmptyTag::Line(line) => self.load_line(line),
             EmptyTag::Point(point) => self.load_point(point),
             EmptyTag::Polygon(polygon) => self.load_polygon(polygon),
@@ -646,6 +654,37 @@ impl OperationExtractor {
     fn load_rect(&mut self, rect: &Rect) {
         self.load_convex_polygon(&Polygon::from(rect));
     }
+
+    fn load_image(&mut self, image: &Image) {
+        if image.width <= 0.0 || image.height <= 0.0 {
+            return;
+        }
+
+        let data = [
+            image.x,
+            image.y,
+            0.0,
+            0.0,
+            image.x + image.width,
+            image.y,
+            1.0,
+            0.0,
+            image.x + image.width,
+            image.y + image.height,
+            1.0,
+            1.0,
+            image.x,
+            image.y + image.height,
+            0.0,
+            1.0,
+        ];
+
+        self.data.push(RawOperationData::DrawImage(TextureData {
+            data,
+            texture: image.texture.clone(),
+            transform: image.style.transform.clone(),
+        }))
+    }
 }
 
 struct PointArray {
@@ -763,11 +802,7 @@ impl TriangleFanVertexArray {
         gl::BindVertexArray(self.array_index);
         gl::BindBuffer(gl::ARRAY_BUFFER, self.buffer_index);
         shaders.set_svg_transform(self.transform.clone());
-        gl::DrawArrays(
-            gl::TRIANGLE_FAN,
-            0,
-            self.num_vertices as GLsizei,
-        );
+        gl::DrawArrays(gl::TRIANGLE_FAN, 0, self.num_vertices as GLsizei);
     }
 }
 
@@ -780,12 +815,43 @@ impl Drop for TriangleFanVertexArray {
     }
 }
 
+struct TextureArray {
+    array_index: GLuint,
+    buffer_index: GLuint,
+    texture_index: GLuint,
+    transform: Matrix3x3<f32>,
+}
+
+impl TextureArray {
+    const NUM_VERTICES: u8 = 4;
+
+    unsafe fn draw(&self, shaders: &mut ShaderMgr) {
+        shaders.activate(shaders::Shader::Texture);
+        gl::BindVertexArray(self.array_index);
+        gl::BindBuffer(gl::ARRAY_BUFFER, self.buffer_index);
+        gl::BindTexture(gl::TEXTURE_2D, self.texture_index);
+        shaders.set_svg_transform(self.transform.clone());
+        gl::DrawArrays(gl::TRIANGLE_FAN, 0, Self::NUM_VERTICES as GLsizei);
+    }
+}
+
+impl Drop for TextureArray {
+    fn drop(&mut self) {
+        unsafe {
+            gl::DeleteTextures(1, &self.texture_index);
+            gl::DeleteBuffers(1, &self.buffer_index);
+            gl::DeleteVertexArrays(1, &self.array_index);
+        }
+    }
+}
+
 enum Operation {
     DrawPoints(PointArray),
     DrawLines(LineVertexArray),
     DrawAdjacentLines(LineVertexArray),
     FillPolygon(TriangleVertexArray),
     FillConvexPolygon(TriangleFanVertexArray),
+    DrawImage(TextureArray),
 }
 
 impl Operation {
@@ -956,6 +1022,73 @@ impl Operation {
 
                     operations.push(Operation::FillConvexPolygon(triangle_fan_vertex_array))
                 }
+                RawOperationData::DrawImage(texture_data) => {
+                    let mut texture_array = TextureArray {
+                        array_index: 0,
+                        buffer_index: 0,
+                        texture_index: 0,
+                        transform: texture_data.transform,
+                    };
+
+                    unsafe {
+                        shaders.activate(shaders::Shader::Texture);
+
+                        gl::GenVertexArrays(1, &mut texture_array.array_index);
+                        gl::BindVertexArray(texture_array.array_index);
+
+                        gl::GenBuffers(1, &mut texture_array.buffer_index);
+                        gl::BindBuffer(gl::ARRAY_BUFFER, texture_array.buffer_index);
+                        gl::BufferData(
+                            gl::ARRAY_BUFFER,
+                            (texture_data.data.len() * std::mem::size_of::<f32>())
+                                as gl::types::GLsizeiptr,
+                            texture_data.data.as_ptr() as *const c_void,
+                            gl::STATIC_DRAW,
+                        );
+
+                        gl::GenTextures(1, &mut texture_array.texture_index);
+                        gl::BindTexture(gl::TEXTURE_2D, texture_array.texture_index);
+                        gl::TexImage2D(
+                            gl::TEXTURE_2D,
+                            0,
+                            texture_data.texture.gl_internal_format() as GLint,
+                            texture_data.texture.width() as GLsizei,
+                            texture_data.texture.height() as GLsizei,
+                            0,
+                            texture_data.texture.gl_input_format(),
+                            Texture::GL_DATA_TYPE,
+                            texture_data.texture.data().as_ptr() as *const c_void,
+                        );
+
+                        shaders.set_sampler_source(0);
+
+                        shaders.bind_attributes_to_vertex_array();
+
+                        gl::TexParameteri(
+                            gl::TEXTURE_2D,
+                            gl::TEXTURE_WRAP_S,
+                            gl::CLAMP_TO_EDGE as GLint,
+                        );
+                        gl::TexParameteri(
+                            gl::TEXTURE_2D,
+                            gl::TEXTURE_WRAP_T,
+                            gl::CLAMP_TO_EDGE as GLint,
+                        );
+                        gl::TexParameteri(
+                            gl::TEXTURE_2D,
+                            gl::TEXTURE_MIN_FILTER,
+                            gl::LINEAR_MIPMAP_LINEAR as GLint,
+                        );
+                        gl::TexParameteri(
+                            gl::TEXTURE_2D,
+                            gl::TEXTURE_MAG_FILTER,
+                            gl::LINEAR_MIPMAP_LINEAR as GLint,
+                        );
+                        gl::GenerateMipmap(gl::TEXTURE_2D);
+                    }
+
+                    operations.push(Operation::DrawImage(texture_array));
+                }
             }
         }
 
@@ -977,6 +1110,9 @@ impl Operation {
                 }
                 Operation::FillConvexPolygon(triangle_fan) => {
                     triangle_fan.draw(shaders);
+                }
+                Operation::DrawImage(texture_array) => {
+                    texture_array.draw(shaders);
                 }
             }
         }

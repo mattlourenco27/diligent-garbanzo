@@ -2,7 +2,7 @@
 
 Diligent Garbanzo is a standard-compliant SVG renderer. By the nature of the SVG format, Diligent Garbanzo generates geometry at an infinite resolution.
 
-> This project is still in progress. Features like texture rendering are not yet ready.
+> This project is still in progress. Features like miter rendering are not yet ready.
 
 ## Usage
 

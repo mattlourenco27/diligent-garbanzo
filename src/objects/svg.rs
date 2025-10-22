@@ -13,12 +13,17 @@ use quick_xml::{
 use regex::Regex;
 use sdl2::pixels::Color;
 
-use crate::{matrix::Matrix3x3, texture::Texture, vector::Vector2D};
+use crate::{
+    matrix::Matrix3x3,
+    texture::{self, Texture},
+    vector::Vector2D,
+};
 
 pub type Transform = Matrix3x3<f32>;
 
 #[derive(Debug)]
 pub enum ReadError {
+    ImageDecodeError(texture::DecodeError),
     EndTagBeforeStart,
     FromUtf8Error(FromUtf8Error),
     MissingSVGTag,
@@ -70,9 +75,16 @@ impl From<ParseFloatError> for ReadError {
     }
 }
 
+impl From<texture::DecodeError> for ReadError {
+    fn from(value: texture::DecodeError) -> Self {
+        Self::ImageDecodeError(value)
+    }
+}
+
 impl std::fmt::Display for ReadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::ImageDecodeError(err) => write!(f, "Could not decode image tag: {}", err),
             Self::EndTagBeforeStart => write!(
                 f,
                 "An end tag was found before it's corresponding start tag"
@@ -138,7 +150,10 @@ impl EmptyTag {
                 bytes,
                 parent_style,
             )?)),
-            b"image" => unimplemented!(),
+            b"image" => Ok(EmptyTag::Image(Image::from_bytes_start(
+                bytes,
+                parent_style,
+            )?)),
             unrecognized => Err(EventStatus::UnrecognizedTag(String::from_utf8(
                 unrecognized.to_owned(),
             )?)),
@@ -590,7 +605,7 @@ impl From<&Ellipse> for Polygon {
             return Polygon {
                 style: ellipse.style.clone(),
                 points: Vec::new(),
-            }
+            };
         }
 
         const NUM_POINTS: u32 = 256;
@@ -621,7 +636,7 @@ impl From<&Rect> for Polygon {
             return Polygon {
                 style: rect.style.clone(),
                 points: Vec::new(),
-            }
+            };
         }
 
         if rect.width <= 0.0 {
@@ -633,7 +648,7 @@ impl From<&Rect> for Polygon {
                     [rect.x, rect.y + rect.height].into(),
                     [rect.x, rect.y + rect.height].into(),
                 ],
-            }
+            };
         }
 
         if rect.height <= 0.0 {
@@ -647,7 +662,7 @@ impl From<&Rect> for Polygon {
                 ],
             };
         }
-        
+
         if rect.rx <= 0.0 || rect.ry <= 0.0 {
             return Polygon {
                 style: rect.style.clone(),
@@ -660,29 +675,53 @@ impl From<&Rect> for Polygon {
             };
         }
 
-        let rx = if rect.rx > rect.width * 0.5 { rect.width * 0.5 } else { rect.rx };
-        let ry = if rect.ry > rect.height * 0.5 { rect.height * 0.5 } else { rect.ry };
+        let rx = if rect.rx > rect.width * 0.5 {
+            rect.width * 0.5
+        } else {
+            rect.rx
+        };
+        let ry = if rect.ry > rect.height * 0.5 {
+            rect.height * 0.5
+        } else {
+            rect.ry
+        };
 
         // The four corners of this rectangle are equivalent to the four corners of an ellipse.
 
         const POINTS_PER_CORNER: u32 = 64;
         const ANGLE_INCREMENT: f32 = core::f32::consts::PI * 0.5 / POINTS_PER_CORNER as f32;
-        
+
         let mut points = Vec::new();
         points.reserve_exact(4 * (POINTS_PER_CORNER as usize + 1));
-        
-        let do_quarter_elipse = |points: &mut Vec<Vector2D<f32>>, x0: f32, y0: f32, starting_angle: f32| -> () {
-            // Add one point for the final fence post
-            for point in 0..(POINTS_PER_CORNER + 1) {
-                let theta = point as f32 * ANGLE_INCREMENT + starting_angle;
-                points.push([x0 + rx * theta.cos(), y0 + ry * theta.sin()].into());
-            }
-        };
+
+        let do_quarter_elipse =
+            |points: &mut Vec<Vector2D<f32>>, x0: f32, y0: f32, starting_angle: f32| -> () {
+                // Add one point for the final fence post
+                for point in 0..(POINTS_PER_CORNER + 1) {
+                    let theta = point as f32 * ANGLE_INCREMENT + starting_angle;
+                    points.push([x0 + rx * theta.cos(), y0 + ry * theta.sin()].into());
+                }
+            };
 
         do_quarter_elipse(&mut points, rect.x + rx, rect.y + ry, core::f32::consts::PI);
-        do_quarter_elipse(&mut points, rect.x + rect.width - rx, rect.y + ry, core::f32::consts::PI * 1.5);
-        do_quarter_elipse(&mut points, rect.x + rect.width - rx, rect.y + rect.height - ry, 0.0);
-        do_quarter_elipse(&mut points, rect.x + rx, rect.y + rect.height - ry, core::f32::consts::PI * 0.5);
+        do_quarter_elipse(
+            &mut points,
+            rect.x + rect.width - rx,
+            rect.y + ry,
+            core::f32::consts::PI * 1.5,
+        );
+        do_quarter_elipse(
+            &mut points,
+            rect.x + rect.width - rx,
+            rect.y + rect.height - ry,
+            0.0,
+        );
+        do_quarter_elipse(
+            &mut points,
+            rect.x + rx,
+            rect.y + rect.height - ry,
+            core::f32::consts::PI * 0.5,
+        );
 
         Polygon {
             style: rect.style.clone(),
@@ -729,9 +768,44 @@ impl Ellipse {
 #[derive(Debug)]
 pub struct Image {
     pub style: Style,
-    pub position: Vector2D<f32>,
-    pub dimension: Vector2D<f32>,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
     pub texture: Texture,
+}
+
+impl Image {
+    fn from_bytes_start(bytes: BytesStart, parent_style: Style) -> Result<Self, ReadError> {
+        let style = Style::from_attributes(bytes.attributes().clone(), parent_style)?;
+
+        let mut x = 0.0;
+        let mut y = 0.0;
+        let mut width = 0.0;
+        let mut height = 0.0;
+        let mut href = Cow::Borrowed("");
+
+        for attribute in bytes.attributes() {
+            let attribute = Attribute::parse(attribute?)?;
+            match attribute.key {
+                b"x" => x = attribute.length()?,
+                b"y" => y = attribute.length()?,
+                b"width" => width = attribute.length()?,
+                b"height" => height = attribute.length()?,
+                b"href" => href = attribute.value,
+                _ => (),
+            };
+        }
+
+        Ok(Self {
+            style,
+            x,
+            y,
+            width,
+            height,
+            texture: Texture::from_href(href.as_ref())?,
+        })
+    }
 }
 
 #[derive(Debug)]

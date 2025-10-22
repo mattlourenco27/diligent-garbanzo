@@ -4,18 +4,21 @@ use gl::types::{GLchar, GLenum, GLint, GLuint};
 use crate::matrix::Matrix3x3;
 
 pub const POS_SIZE: u8 = 2;
+pub const TEX_COORD_SIZE: u8 = 2;
 pub const COLOR_SIZE: u8 = 4;
 
 pub enum Shader {
     Basic,
     Line,
     LineAdjacency,
+    Texture,
 }
 
 pub struct ShaderMgr {
     basic_shader: BasicShader,
     line_shader: LineShader,
     line_adjacency_shader: LineAdjacencyShader,
+    texture_shader: TextureShader,
     active_shader: Shader,
 }
 
@@ -30,6 +33,7 @@ impl ShaderMgr {
             basic_shader: BasicShader::build()?,
             line_shader: LineShader::build()?,
             line_adjacency_shader: LineAdjacencyShader::build()?,
+            texture_shader: TextureShader::build()?,
             active_shader: Shader::Basic,
         })
     }
@@ -39,6 +43,7 @@ impl ShaderMgr {
             Shader::Basic => self.basic_shader.activate(),
             Shader::Line => self.line_shader.activate(),
             Shader::LineAdjacency => self.line_adjacency_shader.activate(),
+            Shader::Texture => self.texture_shader.activate(),
         }
         self.active_shader = shader;
     }
@@ -48,6 +53,7 @@ impl ShaderMgr {
             Shader::Basic => self.basic_shader.attributes.bind(),
             Shader::Line => self.line_shader.attributes.bind(),
             Shader::LineAdjacency => self.line_adjacency_shader.attributes.bind(),
+            Shader::Texture => self.texture_shader.attributes.bind(),
         }
     }
 
@@ -67,11 +73,17 @@ impl ShaderMgr {
             .attributes
             .norm_to_viewer
             .update(norm_to_viewer_transform.clone());
+        self.texture_shader.activate();
+        self.texture_shader
+            .attributes
+            .norm_to_viewer
+            .update(norm_to_viewer_transform.clone());
 
         match self.active_shader {
             Shader::Basic => self.basic_shader.activate(),
             Shader::Line => self.line_shader.activate(),
             Shader::LineAdjacency => self.line_adjacency_shader.activate(),
+            Shader::Texture => self.texture_shader.activate(),
         }
     }
 
@@ -92,6 +104,11 @@ impl ShaderMgr {
                 .attributes
                 .svg_transform
                 .update(svg_transform),
+            Shader::Texture => self
+                .texture_shader
+                .attributes
+                .svg_transform
+                .update(svg_transform),
         }
     }
 
@@ -104,6 +121,19 @@ impl ShaderMgr {
                 .thickness
                 .update(thickness),
             _ => panic!("Tried to update line thickness on a shader that does not support it."),
+        }
+    }
+
+    pub unsafe fn set_sampler_source(&mut self, sampler_source: i32) {
+        match self.active_shader {
+            Shader::Texture => self
+                .texture_shader
+                .attributes
+                .sampler
+                .update(sampler_source),
+            _ => panic!(
+                "Tried to set the sampler source for a shader that does not support textures."
+            ),
         }
     }
 }
@@ -159,13 +189,28 @@ impl Uniform<Matrix3x3<f32>> {
     }
 }
 
+impl Uniform<i32> {
+    fn update(&mut self, new_value: i32) {
+        match &self.current_value {
+            Some(value) if *value == new_value => return,
+            _ => {}
+        }
+
+        unsafe {
+            gl::Uniform1i(self.uniform_index, new_value);
+        }
+
+        self.current_value = Some(new_value);
+    }
+}
+
 trait Attributes {
     fn get_position_index(&self) -> GLuint;
     fn get_color_index(&self) -> GLuint;
 
     unsafe fn bind(&self) {
         gl::VertexAttribPointer(
-            self.get_position_index() as gl::types::GLuint,
+            self.get_position_index(),
             POS_SIZE as GLint,
             gl::FLOAT,
             gl::FALSE,
@@ -174,7 +219,7 @@ trait Attributes {
         );
 
         gl::VertexAttribPointer(
-            self.get_color_index() as gl::types::GLuint,
+            self.get_color_index(),
             COLOR_SIZE as GLint,
             gl::FLOAT,
             gl::FALSE,
@@ -182,8 +227,8 @@ trait Attributes {
             (POS_SIZE as usize * std::mem::size_of::<f32>()) as *const c_void,
         );
 
-        gl::EnableVertexAttribArray(self.get_position_index() as gl::types::GLuint);
-        gl::EnableVertexAttribArray(self.get_color_index() as gl::types::GLuint);
+        gl::EnableVertexAttribArray(self.get_position_index());
+        gl::EnableVertexAttribArray(self.get_color_index());
     }
 }
 
@@ -287,6 +332,75 @@ impl LineAttributes {
     }
 }
 
+struct TextureAttributes {
+    position: GLuint,
+    tex_coord: GLuint,
+    sampler: Uniform<i32>,
+    norm_to_viewer: Uniform<Matrix3x3<f32>>,
+    svg_transform: Uniform<Matrix3x3<f32>>,
+}
+
+impl TextureAttributes {
+    unsafe fn new(shader_program: GLuint) -> Result<Self, String> {
+        let position = gl::GetAttribLocation(shader_program, c"position".as_ptr());
+        maybe_get_gl_error()?;
+
+        let tex_coord = gl::GetAttribLocation(shader_program, c"tex_coord".as_ptr());
+        maybe_get_gl_error()?;
+
+        let norm_to_viewer = gl::GetUniformLocation(shader_program, c"norm_to_viewer".as_ptr());
+        maybe_get_gl_error()?;
+
+        let svg_transform = gl::GetUniformLocation(shader_program, c"svg_transform".as_ptr());
+        maybe_get_gl_error()?;
+
+        let tex = gl::GetUniformLocation(shader_program, c"tex".as_ptr());
+        maybe_get_gl_error()?;
+
+        Ok(TextureAttributes {
+            position: position as GLuint,
+            tex_coord: tex_coord as GLuint,
+            sampler: Uniform {
+                uniform_index: tex,
+                current_value: None,
+            },
+            norm_to_viewer: Uniform {
+                uniform_index: norm_to_viewer,
+                current_value: None,
+            },
+            svg_transform: Uniform {
+                uniform_index: svg_transform,
+                current_value: None,
+            },
+        })
+    }
+
+    unsafe fn bind(&self) {
+        gl::VertexAttribPointer(
+            self.position,
+            POS_SIZE as GLint,
+            gl::FLOAT,
+            gl::FALSE,
+            ((POS_SIZE + TEX_COORD_SIZE) as usize * std::mem::size_of::<f32>())
+                as gl::types::GLsizei,
+            std::ptr::null(),
+        );
+
+        gl::VertexAttribPointer(
+            self.tex_coord,
+            TEX_COORD_SIZE as GLint,
+            gl::FLOAT,
+            gl::FALSE,
+            ((POS_SIZE + TEX_COORD_SIZE) as usize * std::mem::size_of::<f32>())
+                as gl::types::GLsizei,
+            (POS_SIZE as usize * std::mem::size_of::<f32>()) as *const c_void,
+        );
+
+        gl::EnableVertexAttribArray(self.position);
+        gl::EnableVertexAttribArray(self.tex_coord);
+    }
+}
+
 struct LineShader {
     vertex_shader: GLuint,
     fragment_shader: GLuint,
@@ -372,28 +486,28 @@ impl LineShader {
 }
 
 impl ShaderProgram for LineShader {
-    fn build() -> Result<LineShader, String> {
+    fn build() -> Result<Self, String> {
         unsafe {
             let shader_program = create_program()?;
             let vertex_shader = send_compile_and_attach_shader(
                 gl::VERTEX_SHADER,
-                LineShader::VERTEX_SHADER,
+                Self::VERTEX_SHADER,
                 shader_program,
             )?;
             let fragment_shader = send_compile_and_attach_shader(
                 gl::FRAGMENT_SHADER,
-                LineShader::FRAGMENT_SHADER,
+                Self::FRAGMENT_SHADER,
                 shader_program,
             )?;
             let geometry_shader = send_compile_and_attach_shader(
                 gl::GEOMETRY_SHADER,
-                LineShader::GEOMETRY_SHADER,
+                Self::GEOMETRY_SHADER,
                 shader_program,
             )?;
 
             link_program(shader_program)?;
 
-            let shader = LineShader {
+            let shader = Self {
                 vertex_shader,
                 fragment_shader,
                 geometry_shader,
@@ -515,28 +629,28 @@ impl LineAdjacencyShader {
 }
 
 impl ShaderProgram for LineAdjacencyShader {
-    fn build() -> Result<LineAdjacencyShader, String> {
+    fn build() -> Result<Self, String> {
         unsafe {
             let shader_program = create_program()?;
             let vertex_shader = send_compile_and_attach_shader(
                 gl::VERTEX_SHADER,
-                LineAdjacencyShader::VERTEX_SHADER,
+                Self::VERTEX_SHADER,
                 shader_program,
             )?;
             let fragment_shader = send_compile_and_attach_shader(
                 gl::FRAGMENT_SHADER,
-                LineAdjacencyShader::FRAGMENT_SHADER,
+                Self::FRAGMENT_SHADER,
                 shader_program,
             )?;
             let geometry_shader = send_compile_and_attach_shader(
                 gl::GEOMETRY_SHADER,
-                LineAdjacencyShader::GEOMETRY_SHADER,
+                Self::GEOMETRY_SHADER,
                 shader_program,
             )?;
 
             link_program(shader_program)?;
 
-            let shader = LineAdjacencyShader {
+            let shader = Self {
                 vertex_shader,
                 fragment_shader,
                 geometry_shader,
@@ -613,23 +727,23 @@ impl BasicShader {
 }
 
 impl ShaderProgram for BasicShader {
-    fn build() -> Result<BasicShader, String> {
+    fn build() -> Result<Self, String> {
         unsafe {
             let shader_program = create_program()?;
             let vertex_shader = send_compile_and_attach_shader(
                 gl::VERTEX_SHADER,
-                BasicShader::VERTEX_SHADER,
+                Self::VERTEX_SHADER,
                 shader_program,
             )?;
             let fragment_shader = send_compile_and_attach_shader(
                 gl::FRAGMENT_SHADER,
-                BasicShader::FRAGMENT_SHADER,
+                Self::FRAGMENT_SHADER,
                 shader_program,
             )?;
 
             link_program(shader_program)?;
 
-            let shader = BasicShader {
+            let shader = Self {
                 vertex_shader,
                 fragment_shader,
                 shader_program,
@@ -648,6 +762,99 @@ impl ShaderProgram for BasicShader {
 }
 
 impl Drop for BasicShader {
+    fn drop(&mut self) {
+        unsafe {
+            gl::DeleteProgram(self.shader_program);
+            gl::DeleteShader(self.fragment_shader);
+            gl::DeleteShader(self.vertex_shader);
+        }
+    }
+}
+
+struct TextureShader {
+    vertex_shader: GLuint,
+    fragment_shader: GLuint,
+    shader_program: GLuint,
+    attributes: TextureAttributes,
+}
+
+impl TextureShader {
+    const VERTEX_SHADER: &CStr = c"#version 150 core
+
+in vec2 position;
+in vec2 tex_coord;
+
+uniform mat3 norm_to_viewer;
+uniform mat3 svg_transform;
+
+out vec2 Tex_coord;
+
+void main() {
+    Tex_coord = tex_coord;
+    vec3 transformed_position = vec3(position, 1.0) * svg_transform * norm_to_viewer;
+    gl_Position = vec4(transformed_position.x, -transformed_position.y, 0.0, 1.0);
+}";
+
+    const FRAGMENT_SHADER: &CStr = c"#version 150 core
+
+in vec2 Tex_coord;
+
+out vec4 outColor;
+
+uniform sampler2D tex;
+
+void main()
+{
+    outColor = texture(tex, Tex_coord);
+}";
+}
+
+impl TextureShader {
+    unsafe fn bind_fragment_shader_output(&self) -> Result<(), String> {
+        gl::BindFragDataLocation(self.shader_program, 0, c"outColor".as_ptr());
+
+        maybe_get_gl_error()?;
+
+        Ok(())
+    }
+}
+
+impl ShaderProgram for TextureShader {
+    fn build() -> Result<Self, String> {
+        unsafe {
+            let shader_program = create_program()?;
+            let vertex_shader = send_compile_and_attach_shader(
+                gl::VERTEX_SHADER,
+                Self::VERTEX_SHADER,
+                shader_program,
+            )?;
+            let fragment_shader = send_compile_and_attach_shader(
+                gl::FRAGMENT_SHADER,
+                Self::FRAGMENT_SHADER,
+                shader_program,
+            )?;
+
+            link_program(shader_program)?;
+
+            let shader = Self {
+                vertex_shader,
+                fragment_shader,
+                shader_program,
+                attributes: TextureAttributes::new(shader_program)?,
+            };
+
+            shader.bind_fragment_shader_output()?;
+
+            Ok(shader)
+        }
+    }
+
+    unsafe fn activate(&self) {
+        gl::UseProgram(self.shader_program);
+    }
+}
+
+impl Drop for TextureShader {
     fn drop(&mut self) {
         unsafe {
             gl::DeleteProgram(self.shader_program);
