@@ -5,6 +5,7 @@ use sdl2::{
     event::{Event, WindowEvent},
     keyboard::KeyboardState,
     mouse::{MouseState, MouseWheelDirection},
+    video::SwapInterval,
 };
 
 use drawsvg::{
@@ -60,11 +61,17 @@ fn update_vsync_settings(
     keyboard_state: &KeyboardState,
 ) -> Result<(), String> {
     let video_sys = &sdl_context.video_subsystem;
-    if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::B) {
-        video_sys.gl_set_swap_interval(sdl2::video::SwapInterval::Immediate)?;
+    if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::B)
+        && video_sys.gl_get_swap_interval() != SwapInterval::Immediate
+    {
+        video_sys.gl_set_swap_interval(SwapInterval::Immediate)?;
+        println!("Disabled Vsync.");
     }
-    if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::V) {
+    if keyboard_state.is_scancode_pressed(sdl2::keyboard::Scancode::V)
+        && video_sys.gl_get_swap_interval() != SwapInterval::VSync
+    {
         video_sys.gl_set_swap_interval(sdl2::video::SwapInterval::VSync)?;
+        println!("Enabled Vsync.");
     }
 
     Ok(())
