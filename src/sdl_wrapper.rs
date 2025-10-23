@@ -5,6 +5,8 @@ use crate::{
     render::{canvas::CanvasRenderer, gl::GLRenderer, Renderer},
 };
 
+const MULTISAMPLE_SAMPLES: u8 = 4;
+
 pub struct SDLContext {
     pub sdl: Sdl,
     pub video_subsystem: VideoSubsystem,
@@ -55,6 +57,7 @@ impl SDLContext {
         let gl_attr = self.video_subsystem.gl_attr();
         gl_attr.set_context_profile(sdl2::video::GLProfile::Core);
         gl_attr.set_context_version(3, 3);
+        gl_attr.set_multisample_samples(MULTISAMPLE_SAMPLES);
 
         let window = match self
             .video_subsystem

@@ -25,6 +25,7 @@ pub struct ShaderMgr {
 impl ShaderMgr {
     pub fn new() -> Result<Self, String> {
         unsafe {
+            gl::Enable(gl::MULTISAMPLE);
             gl::Enable(gl::BLEND);
             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
         }
